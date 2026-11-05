@@ -95,7 +95,23 @@ hormone-sim risk --agent metoclopramide --dose 15 --weeks 12 --age 30
 hormone-sim personalize --agent metoclopramide --dose 10 \
     --obs '2:prl=72,milk=95' --obs '6:prl=78,milk=140' \
     --candidate-doses 10 15 20
+
+# Study tools (for clinician-supervised titration studies):
+hormone-sim ingest --csv examples/participant_log.csv --agent metoclopramide \
+    --milk-unit oz --out outputs/personal_posterior.png   # log -> posterior + figure
+hormone-sim aims --baseline '0:all=0' --visit '8:lips_perioral=2'  # AIMS TD monitoring
+hormone-sim protocol --agent metoclopramide --out docs/protocol-draft.md  # IRB skeleton
 ```
+
+The example participant log lives in [`examples/`](examples/).
+
+## Next wave: trans-masculine / masculinization
+
+Planned and scoped in [`docs/roadmap-trans-masc.md`](docs/roadmap-trans-masc.md):
+testosterone PK (esters' peak–trough story), masculinization PD outcomes
+(anchored on menstrual cessation), erythrocytosis risk framing, and
+generalizing the study layer. The architecture (PK registries, PD feedback,
+population bands, personalization) carries over directly.
 
 Programmatic use:
 

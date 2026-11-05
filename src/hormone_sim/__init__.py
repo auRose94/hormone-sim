@@ -79,8 +79,22 @@ from .personalization import (
     personalize,
     posterior_predictive,
 )
+from .ingest import (
+    load_observations,
+    personalize_from_csv,
+    plot_personal,
+    IngestError,
+)
+from .aims import (
+    AIMS_ITEMS,
+    AIMSVisit,
+    AIMSRecord,
+    MONITORING_SCHEDULE,
+    parse_visit,
+)
+from .protocol import ProtocolConfig, generate_protocol
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = [
     "simulate",
@@ -146,5 +160,16 @@ __all__ = [
     "PersonalizedResult",
     "personalize",
     "posterior_predictive",
+    "load_observations",
+    "personalize_from_csv",
+    "plot_personal",
+    "IngestError",
+    "AIMS_ITEMS",
+    "AIMSVisit",
+    "AIMSRecord",
+    "MONITORING_SCHEDULE",
+    "parse_visit",
+    "ProtocolConfig",
+    "generate_protocol",
     "__version__",
 ]

@@ -57,6 +57,9 @@ from .sensitivity import (
 )
 from .risk_exposure import exposure_report
 from .personalization import Observation, personalize, posterior_predictive
+from .ingest import load_observations, personalize_from_csv, plot_personal
+from .aims import AIMSRecord, parse_visit
+from .protocol import ProtocolConfig, generate_protocol
 from .lactation import LactationProtocol as _LP
 
 
@@ -492,6 +495,76 @@ def cmd_personalize(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ingest(args: argparse.Namespace) -> int:
+    """Personal inference from a participant CSV log."""
+    obs, skipped = load_observations(
+        args.csv, milk_unit=args.milk_unit,
+        default_dose_mg_day=args.dose)
+    print(f"Ingested {len(obs)} observation(s) from {args.csv} "
+          f"({skipped} row(s) skipped — no measurement)")
+    for o in obs:
+        print(f"  - {o.describe()}")
+    result = personalize(
+        agent=args.agent, observations=obs, prep_weeks=args.prep_weeks,
+        pumping_sessions_per_day=args.sessions, n=args.n, seed=args.seed)
+    print()
+    print(result.report())
+    print()
+    from .lactation import LactationProtocol as LP, simulate_lactation
+    from .sensitivity import simulate_lactation_population
+    proto = LP(galactagogue=args.agent,
+               galactagogue_dose_mg_day=obs[-1].dose_mg_day,
+               prep_weeks=args.prep_weeks,
+               pumping_sessions_per_day=args.sessions)
+    prior_pop = simulate_lactation_population(proto, n=args.n, seed=args.seed)
+    prior_bands = prior_pop.band(0.8)
+    print(posterior_predictive(result, args.candidate_doses,
+                               prep_weeks=args.prep_weeks,
+                               base_protocol=proto))
+    if args.out:
+        plot_personal(result, obs, prior_bands=prior_bands,
+                      out_path=str(Path(args.out)),
+                      prep_weeks=args.prep_weeks)
+        print(f"\nWrote: {args.out}")
+    return 0
+
+
+def cmd_aims(args: argparse.Namespace) -> int:
+    """AIMS monitoring record: baseline + visits, with conservative flags."""
+    baseline = parse_visit(args.baseline)
+    record = AIMSRecord(baseline=baseline)
+    for spec in (args.visit or []):
+        flags = record.add_visit(parse_visit(spec))
+        if flags:
+            print("SAFETY FLAGS:")
+            for f in flags:
+                print(f"  {f}")
+    print()
+    print(record.report())
+    return 0
+
+
+def cmd_protocol(args: argparse.Namespace) -> int:
+    """Generate an IRB-style protocol skeleton with live expected values."""
+    cfg = ProtocolConfig(
+        agent=args.agent,
+        start_dose_mg_day=args.start_dose,
+        max_dose_mg_day=args.max_dose,
+        target_prolactin_ng_ml=args.target_prolactin,
+        prep_weeks=args.prep_weeks,
+        site=args.site, pi=args.pi,
+        title=args.title,
+    )
+    doc = generate_protocol(cfg)
+    if args.out:
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.out).write_text(doc)
+        print(f"Wrote protocol skeleton: {args.out}")
+    else:
+        print(doc)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="hormone-sim",
@@ -635,6 +708,46 @@ def build_parser() -> argparse.ArgumentParser:
                      default=[10, 15, 20],
                      help="doses for the posterior-predictive titration table")
     ppz.set_defaults(func=cmd_personalize)
+
+    pin = sub.add_parser("ingest",
+                         help="personal inference from a participant CSV log")
+    pin.add_argument("--csv", required=True)
+    pin.add_argument("--agent", default="metoclopramide",
+                     choices=sorted(GALACTAGOGUES.keys()))
+    pin.add_argument("--dose", type=float, default=None,
+                     help="default dose if the CSV has none (mg/d)")
+    pin.add_argument("--milk-unit", default="ml", choices=["ml", "oz"],
+                     help="milk column unit (community oz logs supported)")
+    pin.add_argument("--prep-weeks", type=float, default=30.0)
+    pin.add_argument("--sessions", type=float, default=8.0)
+    pin.add_argument("--n", type=int, default=400)
+    pin.add_argument("--seed", type=int, default=7)
+    pin.add_argument("--candidate-doses", nargs="+", type=float,
+                     default=[10, 15, 20])
+    pin.add_argument("--out", help="write posterior-vs-prior figure PNG")
+    pin.set_defaults(func=cmd_ingest)
+
+    pam = sub.add_parser("aims",
+                         help="AIMS monitoring record with safety flags")
+    pam.add_argument("--baseline", required=True,
+                     help="baseline exam 'week:all=N' (e.g. '0:all=0')")
+    pam.add_argument("--visit", action="append", default=[],
+                     help="visit 'week:item=N,...[,after_stop]' (repeatable)")
+    pam.set_defaults(func=cmd_aims)
+
+    ppr = sub.add_parser("protocol",
+                         help="generate an IRB-style protocol skeleton")
+    ppr.add_argument("--agent", default="metoclopramide",
+                     choices=sorted(GALACTAGOGUES.keys()))
+    ppr.add_argument("--start-dose", type=float, default=10.0)
+    ppr.add_argument("--max-dose", type=float, default=20.0)
+    ppr.add_argument("--target-prolactin", type=float, default=70.0)
+    ppr.add_argument("--prep-weeks", type=float, default=30.0)
+    ppr.add_argument("--site", default="[SITE — clinic name, city]")
+    ppr.add_argument("--pi", default="[PRINCIPAL INVESTIGATOR]")
+    ppr.add_argument("--title", default=None)
+    ppr.add_argument("--out", help="write protocol markdown")
+    ppr.set_defaults(func=cmd_protocol)
 
     return p
 
