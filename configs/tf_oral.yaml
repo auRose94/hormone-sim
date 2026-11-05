@@ -1,0 +1,10 @@
+name: oral micronized 4 mg/day
+population: trans_feminine
+estradiol:
+  route: oral
+  daily_rate_ug_day: 4000   # 4 mg/day micronized estradiol (ug/day)
+anti_androgen:
+  spironolactone: 1.0
+notes: >
+  Oral micronized estradiol. Heavy hepatic first-pass; higher clot-risk profile
+  than transdermal. Population modeling input only — not a prescription.

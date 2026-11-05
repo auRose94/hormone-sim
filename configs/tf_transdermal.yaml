@@ -1,0 +1,10 @@
+name: transdermal 50 ug/day
+population: trans_feminine
+estradiol:
+  route: transdermal
+  daily_rate_ug_day: 50
+anti_androgen:
+  spironolactone: 1.0     # relative dose units (~100-200 mg/d)
+notes: >
+  Typical first-line transdermal regimen; avoids hepatic first-pass.
+  Population modeling input only — not a prescription.

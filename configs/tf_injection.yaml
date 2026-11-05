@@ -1,0 +1,13 @@
+name: intramuscular ester weekly
+population: trans_feminine
+estradiol:
+  route: im_injection
+  # 10 mg estradiol valerate/esters per week (typical starting IM dose).
+  injection_ug: 10000
+  injection_interval_hours: 168     # weekly
+anti_androgen:
+  spironolactone: 1.0
+notes: >
+  Intramuscular estradiol ester, weekly. Slow depot absorption gives a long
+  half-life and lower peak-trough fluctuation than oral. Population modeling
+  input only — not a prescription.
