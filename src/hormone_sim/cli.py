@@ -261,6 +261,7 @@ def cmd_lactation(args: argparse.Namespace) -> int:
         galactagogue=args.galactagogue,
         galactagogue_dose_mg_day=args.dose,
         prep_weeks=args.prep_weeks,
+        progesterone_start_weeks=args.p_start_weeks,
         pumping_sessions_per_day=args.sessions,
     )
     result = simulate_lactation(
@@ -276,6 +277,19 @@ def cmd_lactation(args: argparse.Namespace) -> int:
         i = int(round((drop + wk) / 0.25))
         if i < result.milk_ml_day.size:
             print(f"    +{wk:>2} wk: {result.milk_ml_day[i]:>6.1f}")
+
+    if getattr(args, "bands", False):
+        from .sensitivity import simulate_lactation_population
+        pop = simulate_lactation_population(
+            protocol, n=args.n, seed=args.seed,
+            total_weeks=args.prep_weeks + args.lactation_weeks,
+        )
+        print()
+        print(pop.report())
+        result_for_plot = pop
+    else:
+        result_for_plot = None
+
     if args.out:
         import matplotlib
         matplotlib.use("Agg")
@@ -284,12 +298,20 @@ def cmd_lactation(args: argparse.Namespace) -> int:
 
         fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(9, 9), sharex=True,
                                             constrained_layout=True)
-        ax1.plot(result.weeks, result.priming, color="#8e44ad", lw=1.8,
-                 label="priming (E2+P preparation)")
-        ax1.plot(result.weeks, result.maturation, color="#e67e22", lw=1.8,
+        ax1.plot(result.weeks, result.ductal, color="#8e44ad", lw=1.6,
+                 label="ductal (E2-driven)")
+        ax1.plot(result.weeks, result.lobuloalveolar, color="#c0392b", lw=1.6,
+                 label="lobuloalveolar (P-driven)")
+        ax1.plot(result.weeks, result.priming, color="#555", lw=1.2, ls="--",
+                 label="capacity = sqrt(ductal·LA)")
+        ax1.plot(result.weeks, result.maturation, color="#e67e22", lw=1.6,
                  label="lactogenesis maturation")
+        # Mark the progesterone window.
+        p_on = protocol.p_start()
+        if p_on < protocol.prep_weeks:
+            ax1.axvspan(p_on, protocol.prep_weeks, color="#c0392b", alpha=0.08)
         ax1.set_ylabel("index (0-1)")
-        ax1.legend(fontsize=8)
+        ax1.legend(fontsize=7, loc="upper left")
         ax1.grid(alpha=0.3)
 
         ax2.plot(result.weeks, result.prolactin, color="#c0392b", lw=1.8)
@@ -299,9 +321,16 @@ def cmd_lactation(args: argparse.Namespace) -> int:
         ax2.legend(fontsize=8)
         ax2.grid(alpha=0.3)
 
-        ax3.fill_between(result.weeks, 0, result.milk_ml_day, color="#2980b9",
-                         alpha=0.35)
-        ax3.plot(result.weeks, result.milk_ml_day, color="#2980b9", lw=1.8)
+        if result_for_plot is not None:
+            lo, med, hi = result_for_plot.band(0.8)
+            ax3.fill_between(result.weeks, lo, hi, color="#2980b9", alpha=0.25,
+                             label="80% interval")
+            ax3.plot(result.weeks, med, color="#2980b9", lw=1.8, label="median")
+            ax3.legend(fontsize=8)
+        else:
+            ax3.fill_between(result.weeks, 0, result.milk_ml_day,
+                             color="#2980b9", alpha=0.35)
+            ax3.plot(result.weeks, result.milk_ml_day, color="#2980b9", lw=1.8)
         ax3.set_ylabel("Milk (mL/day)")
         ax3.set_xlabel("Weeks")
         ax3.grid(alpha=0.3)
@@ -310,19 +339,52 @@ def cmd_lactation(args: argparse.Namespace) -> int:
         for ax in fig.axes:
             ax.axvline(drop, color="#666", ls="--", lw=0.8)
 
-        fig.suptitle(
-            f"Lactation induction — {protocol.galactagogue} "
-            f"{protocol.galactagogue_dose_mg_day:g} mg/day, "
-            f"{protocol.prep_weeks:g} wk prep, "
-            f"{protocol.pumping_sessions_per_day:g} sessions/day",
-            fontsize=11,
-        )
+        title = (f"Lactation induction — {protocol.galactagogue} "
+                 f"{protocol.galactagogue_dose_mg_day:g} mg/day, "
+                 f"{protocol.prep_weeks:g} wk prep, "
+                 f"{protocol.pumping_sessions_per_day:g} sessions/day")
+        if result_for_plot is not None:
+            title += f" [bands n={result_for_plot.milk.shape[0]}]"
+        fig.suptitle(title, fontsize=11)
         out = Path(args.out)
         out.mkdir(parents=True, exist_ok=True)
         png = out / f"lactation_{protocol.galactagogue}_{int(protocol.galactagogue_dose_mg_day)}mg.png"
         fig.savefig(png, dpi=130)
         plt.close(fig)
         print(f"\nWrote: {png}")
+    return 0
+
+
+def cmd_compare(args: argparse.Namespace) -> int:
+    """Head-to-head galactagogue comparison at equieffective prolactin."""
+    from .comparison import compare_galactagogues, comparison_table, tradeoff_notes
+    rows = compare_galactagogues(
+        agents=args.agents,
+        target_prolactin_ng_ml=args.target_prolactin,
+        prep_weeks=args.prep_weeks,
+        pumping_sessions_per_day=args.sessions,
+        progesterone_start_weeks=args.p_start_weeks,
+    )
+    print(comparison_table(rows))
+    print()
+    print(tradeoff_notes(rows))
+    if args.out:
+        import csv
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with out.open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow(["agent", "dose_mg_day", "prolactin_ng_ml",
+                        "ss_milk_ml_day", "peak_milk_ml_day",
+                        "weeks_to_50ml", "half_life_h", "us_approved"])
+            for r in rows:
+                w.writerow([r.name, round(r.dose_mg_day, 2),
+                            round(r.prolactin_ng_ml, 1),
+                            round(r.ss_milk, 1), round(r.peak_milk, 1),
+                            (round(r.weeks_to_supply, 2)
+                             if r.weeks_to_supply is not None else "never"),
+                            r.half_life_h, r.approved_us])
+        print(f"\nWrote: {out}")
     return 0
 
 
@@ -395,13 +457,34 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--dose", type=float, default=40.0,
                     help="galactagogue daily dose (mg/day)")
     pl.add_argument("--prep-weeks", type=float, default=30.0,
-                    help="E2+progestogen preparation phase (weeks)")
+                    help="E2+anti-androgen preparation phase (weeks)")
+    pl.add_argument("--p-start-weeks", type=float, default=None,
+                    help="week progesterone starts (default: prep minus 12; "
+                    "set >= prep-weeks for a P-free protocol)")
     pl.add_argument("--sessions", type=float, default=8.0,
                     help="pumping/suckling sessions per day")
     pl.add_argument("--lactation-weeks", type=float, default=52.0,
                     help="lactation phase to simulate after the drop (weeks)")
+    pl.add_argument("--bands", action="store_true",
+                    help="Monte-Carlo sensitivity bands on the milk parameters")
+    pl.add_argument("--n", type=int, default=200,
+                    help="sample count for --bands")
+    pl.add_argument("--seed", type=int, default=42, help="seed for --bands")
     pl.add_argument("--out", help="output directory for the figure")
     pl.set_defaults(func=cmd_lactation)
+
+    pcm = sub.add_parser("compare",
+                         help="compare galactagogues at equieffective prolactin")
+    pcm.add_argument("--agents", nargs="+",
+                     default=["domperidone", "metoclopramide"],
+                     choices=sorted(GALACTAGOGUES.keys()))
+    pcm.add_argument("--target-prolactin", type=float, default=130.0,
+                     help="target prolactin (ng/mL) all agents are dose-matched to")
+    pcm.add_argument("--prep-weeks", type=float, default=30.0)
+    pcm.add_argument("--p-start-weeks", type=float, default=None)
+    pcm.add_argument("--sessions", type=float, default=8.0)
+    pcm.add_argument("--out", help="write comparison CSV")
+    pcm.set_defaults(func=cmd_compare)
 
     return p
 

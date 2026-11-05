@@ -30,7 +30,7 @@ of pre‑clinical modeling that precedes and informs properly supervised clinica
 | **Estrogenic activity** | A registry of real phytoestrogens (genistein, coumestrol, …) plus a constructor for *hypothetical* molecules, each characterized by relative estrogenic activity (REA) vs estradiol. Folds any compound's plasma curve into **estradiol‑equivalents (EE)** so breast‑growth creams, soy supplements, and estradiol sit on one scale. |
 | **Inverse design** | Given a target EE (e.g. the 100–200 pg/mL window), what dose does a candidate/hypothetical molecule need? "Care yet to be discovered" explored as a property space. |
 | **Breast development** | Cumulative‑EE‑driven saturating‑growth model mapped to Tanner stages (population‑typical; genetics dominate the ceiling). |
-| **Galactagogues & lactation** | D2‑antagonist registry (metoclopramide, domperidone, sulpiride, amisulpride) with PK + prolactin Emax/ED50 dose‑response; Newman–Goldfarb induction protocol (E2+P priming → drop → galactagogue + pumping) → milk‑production timeline. **No controlled trials in trans women** — calibrated from postpartum cis literature, large uncertainty flagged. |
+| **Galactagogues & lactation** | D2‑antagonist registry (metoclopramide, domperidone, sulpiride, amisulpride) with PK + prolactin Emax/ED50 dose‑response; Newman–Goldfarb induction protocol with **two‑compartment priming** (E2‑driven ductal scaffold + progesterone‑driven lobuloalveolar units, gated by ducts) → milk‑production timeline. Equieffective head‑to‑head `compare` mode; Monte‑Carlo sensitivity bands on the milk parameters. **No controlled trials in trans women** — calibrated from postpartum cis literature, large uncertainty flagged. |
 
 The model is deliberately **simplified and transparent**: every parameter is a named,
 citable constant (see [`docs/references.md`](docs/references.md)), and the few that are
@@ -76,6 +76,16 @@ hormone-sim galactagogues --name domperidone
 # Lactation induction: Newman-Goldfarb protocol, 7 mo prep, domperidone 40 mg/day
 hormone-sim lactation --galactagogue domperidone --dose 40 \
     --prep-weeks 30 --sessions 8 --out outputs/
+
+# Same, with Monte-Carlo sensitivity bands on the milk parameters
+hormone-sim lactation --galactagogue domperidone --dose 40 --bands --n 300
+
+# Interrogate progesterone timing: P last 20 wk vs P-free protocol
+hormone-sim lactation --prep-weeks 30 --p-start-weeks 10
+hormone-sim lactation --prep-weeks 30 --p-start-weeks 30   # P-free
+
+# Head-to-head: agents dose-matched to the SAME prolactin target
+hormone-sim compare --agents domperidone metoclopramide --target-prolactin 130
 ```
 
 Programmatic use:

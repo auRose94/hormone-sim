@@ -51,8 +51,20 @@ from .lactation import (
     LactationResult,
     simulate_lactation,
 )
+from .comparison import (
+    AgentComparison,
+    compare_galactagogues,
+    equieffective_dose,
+    comparison_table,
+    tradeoff_notes,
+)
+from .sensitivity import (
+    SensitivitySpec,
+    LactationPopulationResult,
+    simulate_lactation_population,
+)
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "simulate",
@@ -96,5 +108,14 @@ __all__ = [
     "LactationProtocol",
     "LactationResult",
     "simulate_lactation",
+    # comparison / sensitivity
+    "AgentComparison",
+    "compare_galactagogues",
+    "equieffective_dose",
+    "comparison_table",
+    "tradeoff_notes",
+    "SensitivitySpec",
+    "LactationPopulationResult",
+    "simulate_lactation_population",
     "__version__",
 ]

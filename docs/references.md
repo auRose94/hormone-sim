@@ -100,9 +100,28 @@ pregnancy priming). Treat all outputs as a mechanistic reasoning tool.
   drop → D2 antagonist + pumping 8–12 sessions/day). Trans-feminine outcomes are
   **case reports only**; partial supply (tens-to-low-hundreds of mL/day) is the
   reported norm, not full lactation.
-- **Model uncertainty:** `milk_vmax`, `milk_km_prolactin`, priming rate, and
-  involution rate are calibrated with LARGE uncertainty; the lactogenesis
-  maturation time constant is the least-constrained parameter in the whole model.
+- **Landmark case report:** Reisman T, Goldstein Z. "Induced Lactation in a
+  Transgender Woman." *N Engl J Med* 2018;378. — One patient; estradiol +
+  anti-androgen priming with added progesterone, then domperidone + pumping;
+  successful partial supply. The single closest datapoint this model has to a
+  trans-feminine validation, and it is n=1.
+- **Two-compartment priming (ductal vs lobuloalveolar):** E2 drives ductal
+  elongation/branching; progesterone drives lobuloalveolar (secretory-unit)
+  development and is *gated* by the ductal scaffold. *Neville MC et al.,
+  "Mammary gland biology and neoplasia," J Mammary Gland Biol Neoplasia;
+  Hovey RC, McFadden TB, Akers RM, "Regulation of mammary gland growth and
+  involution," 1999.* The model's **hard gate** (zero P → zero LA → zero milk)
+  is a simplification: E2+P protocols that skip P have been anecdotally
+  reported to produce low-but-nonzero supply, so the gate is best read as
+  "P is the dominant driver of secretory capacity," not an absolute biological
+  law. Protocols differ in P timing (~1–3 months before the drop); the model
+  exposes that timing as a parameter rather than hardcoding one answer.
+- **Model uncertainty:** `milk_vmax`, `milk_km_prolactin`, the growth/maturation
+  time constants, and the involution rate are calibrated with LARGE uncertainty;
+  the lactogenesis maturation time constant is the least-constrained parameter
+  in the whole model. The sensitivity bands (`sensitivity.py`) sample these
+  with judgment-call CVs (widest on maturation); the drug's prolactin
+  dose-response uncertainty is NOT included in those bands.
 
 **Herbal galactagogues (fenugreek, blessed thistle, shatavari, moringa) are
 deliberately excluded from the registry.** They have no established D2-antagonist
