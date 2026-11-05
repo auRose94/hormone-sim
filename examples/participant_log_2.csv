@@ -1,0 +1,6 @@
+date,drop_date,weeks_post_drop,dose_mg_day,prolactin_ng_ml,milk_ml_day,notes
+2026-10-01,2026-10-01,,10,62,,
+,2026-10-01,2,10,70,60,
+,2026-10-01,4,15,88,110,stepped up
+,2026-10-01,6,15,95,150,
+,2026-10-01,8,20,,180,at ceiling dose

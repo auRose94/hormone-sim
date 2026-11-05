@@ -1,0 +1,5 @@
+study_id,csv,domain
+TF-001,participant_log.csv,lactation
+TF-002,participant_log_2.csv,lactation
+TM-001,t_log.csv,t_log
+TM-002,t_log_2.csv,t_log

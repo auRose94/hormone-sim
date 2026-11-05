@@ -80,11 +80,19 @@ def simulate_hct(
     dt_weeks: float = 0.25,
     model: Optional[HctModel] = None,
     body_weight_kg: float = 70.0,
+    dt_hours: float = 1.0,
 ) -> HctResult:
-    """Project the hematocrit trajectory under a T regimen."""
+    """Project the hematocrit trajectory under a T regimen.
+
+    ``dt_hours`` is passed through to the underlying PK integrator; the
+    default keeps the historical 1-hour grid. Coarser grids (2-3 h) are
+    appropriate when the call sits inside a Monte-Carlo sweep — e.g. the
+    protocol generator's expected-values table — where the Hct response
+    (tau ~10 wk) is far slower than the PK detail being coarsened.
+    """
     model = model or HctModel()
     pk = simulate_androgen(androgen, dose_mg, interval_days, weeks,
-                           body_weight_kg=body_weight_kg)
+                           body_weight_kg=body_weight_kg, dt_hours=dt_hours)
     step_h = dt_weeks * 7 * 24
     n = int(round(weeks * 7 * 24 / step_h)) + 1
     idx = np.clip((np.arange(n) * step_h / pk["hours"][-1]

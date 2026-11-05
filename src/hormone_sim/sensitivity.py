@@ -188,40 +188,25 @@ def simulate_lactation_population(
     making the envelope end-to-end: drug response *and* gland response.
     Pass ``include_drug_uncertainty=False`` to hold the agent's dose-response
     at its population value (gland-only bands, the pre-0.5 behavior).
+
+    The sampling loop is the study layer's shared population machinery
+    (:func:`hormone_sim.measurement.population_bands`) driven by the
+    lactation domain's measurement model — the lactation-specific part is
+    the descriptor, not the loop.
     """
-    from .galactagogues import get_galactagogue, PROLACTIN_BASELINE_NG_ML
+    from .measurement import population_bands
+    from .personalization import LactationDomain
 
-    spec = spec or SensitivitySpec()
-    rng = np.random.default_rng(seed)
-    g = get_galactagogue(protocol.galactagogue)
-
-    stack: List[np.ndarray] = []
-    weeks = None
-    for _ in range(n):
-        m = spec.sample(rng)
-
-        p_drug = None
-        if include_drug_uncertainty:
-            emax = g.prolactin_emax_ng_ml * float(
-                rng.lognormal(0.0, spec.galactagogue_cvs["prolactin_emax_ng_ml"]))
-            ed50 = max(1e-3, g.prolactin_ed50_mg_day * float(
-                rng.lognormal(0.0, spec.galactagogue_cvs["prolactin_ed50_mg_day"])))
-            base = PROLACTIN_BASELINE_NG_ML * float(
-                rng.lognormal(0.0, spec.galactagogue_cvs["baseline"]))
-            d = max(0.0, float(protocol.galactagogue_dose_mg_day))
-            p_drug = base + emax * d / (ed50 + d)
-
-        res = simulate_lactation(protocol, total_weeks=total_weeks,
-                                 dt_weeks=dt_weeks, model=m,
-                                 individual_prolactin_ng_ml=p_drug)
-        if weeks is None:
-            weeks = res.weeks
-        stack.append(res.milk_ml_day)
-
+    domain = LactationDomain(
+        agent=protocol.galactagogue, base_protocol=protocol,
+        spec=spec or SensitivitySpec(), dt_weeks=dt_weeks,
+        total_weeks=total_weeks,
+        include_drug_uncertainty=include_drug_uncertainty,
+    )
+    weeks, curves = population_bands(
+        domain, float(protocol.galactagogue_dose_mg_day), n, seed)
     return LactationPopulationResult(
-        protocol=protocol,
-        weeks=weeks,
-        milk=np.vstack(stack),
+        protocol=protocol, weeks=weeks, milk=curves["milk"],
     )
 
 
@@ -268,36 +253,45 @@ def dose_sweep_population(
     (unknown, sampled) spread in prolactin sensitivity and maturation
     threshold. Uses the SAME seed for every dose so rows are paired — the
     same "bodies" are evaluated at each dose.
+
+    Built on the domain-generic sweep
+    (:func:`hormone_sim.measurement.population_sweep`) — the lactation part
+    is the descriptor, the sweep/pairing machinery is shared (the T-domain
+    :func:`hormone_sim.personalization_androgen.androgen_population_sweep`
+    is the same machinery with a different descriptor).
     """
     from .galactagogues import get_galactagogue, prolactin_response
+    from .measurement import population_sweep
+    from .personalization import LactationDomain
 
     g = get_galactagogue(agent)
     spec = spec or SensitivitySpec()
-    rows: List[DoseSweepRow] = []
 
-    for dose in doses:
-        protocol = LactationProtocol(
-            galactagogue=agent,
-            galactagogue_dose_mg_day=float(dose),
-            prep_weeks=prep_weeks,
-            progesterone_start_weeks=progesterone_start_weeks,
-            pumping_sessions_per_day=pumping_sessions_per_day,
-        )
-        # Same seed per dose -> paired samples across doses.
-        pop = simulate_lactation_population(
-            protocol, n=n, seed=seed, spec=spec,
-        )
-        p10, p50, p90 = pop.steady_state()
-        tail_dt = pop.weeks[1] - pop.weeks[0]
-        n_tail = max(1, int(round(8.0 / tail_dt)))
-        tail = pop.milk[:, -n_tail:].mean(axis=1)
-        frac = float(np.mean(tail >= threshold_ml_day))
+    # The base protocol carries prep-phase structure; population_body swaps
+    # in each candidate dose, so one domain serves the whole sweep.
+    base_protocol = LactationProtocol(
+        galactagogue=agent,
+        galactagogue_dose_mg_day=float(doses[0]) if doses else 0.0,
+        prep_weeks=prep_weeks,
+        progesterone_start_weeks=progesterone_start_weeks,
+        pumping_sessions_per_day=pumping_sessions_per_day,
+    )
+    domain = LactationDomain(
+        agent=agent, base_protocol=base_protocol, spec=spec,
+        threshold_ml_day=threshold_ml_day,
+    )
+    generic = population_sweep(domain, [float(d) for d in doses], n, seed)
+
+    rows: List[DoseSweepRow] = []
+    for dose, grow in zip(doses, generic):
         rows.append(DoseSweepRow(
             agent=g.name,
             dose_mg_day=float(dose),
             prolactin_ng_ml=prolactin_response(g, dose),
-            milk_p10=p10, milk_p50=p50, milk_p90=p90,
-            frac_reaching_threshold=frac,
+            milk_p10=grow.metric("steady_milk", "p10"),
+            milk_p50=grow.metric("steady_milk", "p50"),
+            milk_p90=grow.metric("steady_milk", "p90"),
+            frac_reaching_threshold=grow.frac_hit,
         ))
     return rows
 

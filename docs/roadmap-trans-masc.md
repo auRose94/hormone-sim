@@ -1,6 +1,6 @@
 # Trans-masculine / masculinization wave (hormone-sim v0.8+)
 
-**Status: core built (androgens PK, masculinization PD, erythrocytosis framing, population bands); study-layer generalization (ingest/personalize for T logs) still open.** This document exists so the next wave starts
+**Status: core built (androgens PK, masculinization PD, erythrocytosis framing, population bands); study layer generalized across domains (v0.10: shared measurement-model engine, T-log figure, T protocol skeleton, regimen sweep, cohort aggregation).** This document exists so the next wave starts
 from a plan instead of a blank file — and so anyone picking the project up
 later (including other trans researchers, which is the point of sharing it)
 can see the intended architecture before writing code.
@@ -103,5 +103,11 @@ Cumulative-exposure-driven, saturating, population-typical — same honest
    saturating clocks with genetics-dominant ceilings)
 4. ✅ `erythrocytosis.py` — the mirror-image risk framing: biomarker exists
    (CBC), dose/route-dependent, reversible; route note (injections > gel)
-5. ⬜ `sweep`/`compare`/`personalize` generalization pass (still
-   estradiol-flavored in naming — next step for the study layer on T logs)
+5. ✅ Study-layer generalization (v0.10): the importance-sampling engine,
+   predictive tables, and population sweeps are domain-generic
+   (`measurement.py`; `LactationDomain`/`AndrogenDomain` adapters, behavior
+   pinned bit-for-bit against pre-abstraction reference tests); `ingest-t
+   --out` figure; `protocol-t` (T titration + CBC schedule); `sweep-t`
+   (trough/mean/peak bands + % trough in range); `cohort` aggregation.
+   (`compare` stays lactation-presenting by design: equieffective-
+   prolactin matching is a trans-fem compound-selection question.)

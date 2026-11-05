@@ -123,9 +123,6 @@ hormone-sim masc --agent testosterone_cypionate --dose 100 --interval-days 7 \
 hormone-sim hct --agent testosterone_cypionate --dose 100 --interval-days 7
 ```
 
-Study-layer generalization (ingest/personalize on T logs) is the next open
-item — see [`docs/roadmap-trans-masc.md`](docs/roadmap-trans-masc.md).
-
 ## Intersex condition packs (v0.9)
 
 Parameter overlays that adapt the models to documented intersex endocrinology:
@@ -150,6 +147,36 @@ validation) and runs importance-sampling personalization with a posterior
 predictive over candidate (dose, interval) regimens — trough/mean/peak plus
 Hct plateau, because for T the schedule changes the *swing*, not just the
 level. See [`examples/t_log.csv`](examples/t_log.csv).
+
+## Study layer, both directions (v0.10)
+
+The study layer's machinery — importance-sampling personal inference,
+posterior-predictive titration tables, population sweeps — now lives once,
+in a domain-generic engine (`measurement.py`), with each domain describing
+itself through a measurement-model adapter. Both domains are pinned
+bit-for-bit to their pre-abstraction behavior by tests. On top of it:
+
+```bash
+# T-log inference, now with a figure (posterior vs population prior, T + Hct)
+hormone-sim ingest-t --csv examples/t_log.csv --out outputs/t_posterior.png
+
+# T regimen sweep: trough/mean/peak bands + % of bodies with trough in
+# range — the trans-masculine analog of the lactation low-dose sweep
+hormone-sim sweep-t --agent testosterone_cypionate \
+    --doses 50 100 200 --intervals 7 14 --n 100
+
+# IRB-style protocol skeleton for a T titration study (CBC schedule,
+# live expected values); the trans-masculine sibling of `protocol`
+hormone-sim protocol-t --agent testosterone_cypionate --out docs/protocol-t-draft.md
+
+# De-identified multi-participant case-series summary for a running study
+hormone-sim cohort --manifest examples/cohort_manifest.csv --out outputs/cohort_summary.csv
+```
+
+`cohort` takes a manifest CSV (`study_id,csv,domain`) keyed by study codes
+— never names — and produces the per-participant + cohort-level table the
+protocol statistical plans consume. The underlying logs remain identifiable
+health data; store per site policy (see [`docs/governance.md`](docs/governance.md)).
 
 Programmatic use:
 

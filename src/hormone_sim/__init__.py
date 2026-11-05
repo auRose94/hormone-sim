@@ -76,6 +76,7 @@ from .progestogens import (
 from .personalization import (
     Observation,
     PersonalizedResult,
+    LactationDomain,
     personalize,
     posterior_predictive,
 )
@@ -93,6 +94,7 @@ from .aims import (
     parse_visit,
 )
 from .protocol import ProtocolConfig, generate_protocol
+from .protocol import AndrogenProtocolConfig, generate_androgen_protocol
 from .androgens import (
     ANDROGENS,
     Androgen,
@@ -125,12 +127,35 @@ from .intersex import (
 from .personalization_androgen import (
     AndrogenObservation,
     AndrogenPersonalizedResult,
+    AndrogenDomain,
     personalize_androgen,
     posterior_predictive_androgen,
+    plot_personal_androgen,
     load_androgen_observations,
+    androgen_population_sweep,
+    androgen_sweep_table,
+)
+from .measurement import (
+    MeasurementDomain,
+    BodySample,
+    DomainPosterior,
+    DomainSweepRow,
+    personalize_domain,
+    posterior_predictive_table,
+    population_bands,
+    population_sweep,
+)
+from .aggregation import (
+    ParticipantSummary,
+    load_cohort,
+    summarize_lactation_log,
+    summarize_t_log,
+    cohort_rows,
+    cohort_report,
+    write_cohort_csv,
 )
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 __all__ = [
     "simulate",
@@ -194,6 +219,7 @@ __all__ = [
     "custom_progestogen",
     "Observation",
     "PersonalizedResult",
+    "LactationDomain",
     "personalize",
     "posterior_predictive",
     "load_observations",
@@ -207,6 +233,8 @@ __all__ = [
     "parse_visit",
     "ProtocolConfig",
     "generate_protocol",
+    "AndrogenProtocolConfig",
+    "generate_androgen_protocol",
     "ANDROGENS",
     "Androgen",
     "get_androgen",
@@ -230,8 +258,27 @@ __all__ = [
     "pack_summary",
     "AndrogenObservation",
     "AndrogenPersonalizedResult",
+    "AndrogenDomain",
     "personalize_androgen",
     "posterior_predictive_androgen",
+    "plot_personal_androgen",
     "load_androgen_observations",
+    "androgen_population_sweep",
+    "androgen_sweep_table",
+    "MeasurementDomain",
+    "BodySample",
+    "DomainPosterior",
+    "DomainSweepRow",
+    "personalize_domain",
+    "posterior_predictive_table",
+    "population_bands",
+    "population_sweep",
+    "ParticipantSummary",
+    "load_cohort",
+    "summarize_lactation_log",
+    "summarize_t_log",
+    "cohort_rows",
+    "cohort_report",
+    "write_cohort_csv",
     "__version__",
 ]

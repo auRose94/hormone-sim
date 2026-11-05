@@ -1,0 +1,5 @@
+date,start_date,weeks_on_t,dose_mg,interval_days,testosterone_ngdl,hct_pct,notes
+2026-08-14,2026-08-14,,50,1,410,40.5,gel daily
+,2026-08-14,6,50,1,520,41.8,
+,2026-08-14,12,50,1,560,42.9,steady on gel
+,2026-08-14,18,50,1,,43.4,cbc only

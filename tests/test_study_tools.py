@@ -13,6 +13,8 @@ from hormone_sim import (
     AIMS_ITEMS,
     generate_protocol,
     ProtocolConfig,
+    generate_androgen_protocol,
+    AndrogenProtocolConfig,
     Observation,
     personalize,
 )
@@ -182,4 +184,53 @@ def test_protocol_domperidone_flags_not_approved():
 def test_protocol_deterministic():
     a = generate_protocol(ProtocolConfig())
     b = generate_protocol(ProtocolConfig())
+    assert a == b
+
+
+# --- trans-masculine protocol skeleton ------------------------------------------------
+
+def test_protocol_t_contains_required_sections():
+    doc = generate_androgen_protocol(AndrogenProtocolConfig(
+        site="Test Clinic", pi="Dr. X", expected_values_n=20))
+    for section in ("Background", "Specific aims", "Design", "Population",
+                    "Interventions", "Expected values", "Safety and stopping",
+                    "Ethics and consent", "Statistical plan"):
+        assert section in doc
+    # The domain-specific instruments: trough-timed T and the CBC schedule.
+    assert "trough" in doc.lower()
+    assert "CBC" in doc
+    assert "IRB PROTOCOL NUMBER" in doc
+    assert "protocol-t" in doc  # signature line names its generator
+
+
+def test_protocol_t_expected_values_live():
+    """The expected-values table must reflect the configured doses."""
+    doc = generate_androgen_protocol(AndrogenProtocolConfig(
+        start_dose_mg=50, max_dose_mg=150, expected_values_n=20))
+    assert "| 50 mg / 7 d |" in doc and "| 150 mg / 7 d |" in doc
+
+
+def test_protocol_t_expected_values_bands_finite():
+    """Bands over points: the table must carry p10/p50/p90 triples, and the
+    trough band must sit below the peak band (peak-trough structure visible)."""
+    import re
+    doc = generate_androgen_protocol(AndrogenProtocolConfig(expected_values_n=30))
+    rows = re.findall(r"^\| (\d+) mg / 7 d \| (\d+) / (\d+) / (\d+) \| "
+                      r"(\d+) \| (\d+) \| (\d+) / (\d+) / (\d+) \|", doc, flags=re.M)
+    assert len(rows) == 2
+    for r in rows:
+        t_p10, t_p50, t_p90, mean50, peak50 = (int(r[i]) for i in range(1, 6))
+        assert t_p10 <= t_p50 <= t_p90 < peak50
+        assert mean50 < peak50
+
+
+def test_protocol_t_gel_has_no_trough_language():
+    doc = generate_androgen_protocol(AndrogenProtocolConfig(
+        agent="testosterone_gel", expected_values_n=20))
+    assert "no meaningful trough" in doc or "no trough exists" in doc
+
+
+def test_protocol_t_deterministic():
+    a = generate_androgen_protocol(AndrogenProtocolConfig(expected_values_n=20))
+    b = generate_androgen_protocol(AndrogenProtocolConfig(expected_values_n=20))
     assert a == b

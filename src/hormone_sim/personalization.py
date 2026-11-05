@@ -3,7 +3,9 @@
 This is the module that turns the model from a *population prior* into a
 *personal inference tool* — the piece a titration study actually needs.
 
-Mechanism (importance sampling, no MCMC):
+Mechanism (importance sampling, no MCMC) — the domain-generic engine lives
+in :mod:`hormone_sim.measurement`; this module provides the lactation
+domain's measurement model:
 
 1. Sample N modeled bodies: galactagogue Emax/ED50 + baseline prolactin
    (drug side) and the full lactation parameter set (gland side), each
@@ -51,6 +53,13 @@ from .galactagogues import (
 )
 from .lactation import LactationProtocol, LactationModel, simulate_lactation
 from .sensitivity import SensitivitySpec
+from .measurement import (
+    BodySample,
+    DomainPosterior,
+    MeasurementDomain,
+    personalize_domain,
+    posterior_predictive_table,
+)
 
 
 @dataclass
@@ -76,43 +85,193 @@ class Observation:
         return ", ".join(bits)
 
 
-@dataclass
-class PersonalizedResult:
-    """Posterior over modeled bodies given a participant's observations."""
+# params row layout shared by the domain's likelihood and predictive table.
+_LACTATION_PARAM_NAMES = ["emax", "ed50", "baseline", "milk_vmax", "milk_km",
+                          "mat_tau", "mat_thr", "ductal_tau", "la_tau", "invol"]
 
-    observations: List[Observation]
-    weights: np.ndarray            # normalized importance weights, shape (n,)
-    ess: float                     # effective sample size
-    param_names: List[str]         # names in `params` columns
-    params: np.ndarray             # shape (n, k) sampled parameter values
-    weeks: np.ndarray              # time axis of predictive curves
-    milk: np.ndarray               # shape (n, t) unweighted supply curves
+
+def _model_from_params(params: np.ndarray) -> LactationModel:
+    """Rebuild the sampled gland model from a params row (order above)."""
+    return LactationModel(
+        milk_vmax_ml_day=params[3],
+        milk_km_prolactin_ng_ml=params[4],
+        maturation_tau_weeks=params[5],
+        maturation_prolactin_threshold_ng_ml=params[6],
+        ductal_tau_weeks=params[7],
+        la_tau_weeks=params[8],
+        involution_rate_per_week=params[9],
+    )
+
+
+@dataclass
+class LactationDomain(MeasurementDomain):
+    """The lactation measurement model (see :mod:`hormone_sim.measurement`).
+
+    Drug side: sampled prolactin Emax/ED50/baseline. Gland side: the
+    ``SensitivitySpec`` sample. Measurements: prolactin (analytic Emax
+    prediction) and milk volume (protocol simulation at the observation's
+    dose). Also carries the population descriptors the study layer's
+    shared machinery uses (predictive table, population bands/sweep).
+    """
+
+    agent: str
+    base_protocol: LactationProtocol
+    spec: SensitivitySpec = field(default_factory=SensitivitySpec)
+    dt_weeks: float = 0.25
+    total_weeks: Optional[float] = None          # personalization horizon
+    include_drug_uncertainty: bool = True        # population sampling only
+    threshold_ml_day: float = 100.0              # sweep criterion
+
+    name: str = "lactation"
+    param_names: List[str] = field(
+        default_factory=lambda: list(_LACTATION_PARAM_NAMES))
+
+    # predictive-table presentation (shared renderer in measurement.py)
+    predictive_title: str = ("Posterior predictive — expected steady supply "
+                             "at candidate doses:")
+    predictive_candidate_header: str = f"{'dose mg/d':>10}"
+    predictive_metrics: List[Tuple[str, int]] = field(default_factory=lambda: [
+        ("p10", 6), ("median", 7), ("p90", 6)])
+    predictive_suffix: str = "(mL/day, weighted over YOUR posterior)"
+    predictive_rule: str = "-" * 56
+    predictive_notes: Tuple[str, ...] = (
+        "  Titration reading: choose the smallest dose whose posterior",
+        "  median clears your supply goal — extra dose beyond the knee",
+        "  buys little milk and real exposure.",
+    )
+
+    def __post_init__(self) -> None:
+        self.g = get_galactagogue(self.agent)
+
+    # --- personalization -----------------------------------------------------
+    def sample_body(self, rng: np.random.Generator,
+                    observations) -> BodySample:
+        m = self.spec.sample(rng)
+        emax = self.g.prolactin_emax_ng_ml * float(
+            rng.lognormal(0.0, self.spec.galactagogue_cvs["prolactin_emax_ng_ml"]))
+        ed50 = max(1e-3, self.g.prolactin_ed50_mg_day * float(
+            rng.lognormal(0.0, self.spec.galactagogue_cvs["prolactin_ed50_mg_day"])))
+        base = PROLACTIN_BASELINE_NG_ML * float(
+            rng.lognormal(0.0, self.spec.galactagogue_cvs["baseline"]))
+        params = np.array([emax, ed50, base,
+                           m.milk_vmax_ml_day, m.milk_km_prolactin_ng_ml,
+                           m.maturation_tau_weeks,
+                           m.maturation_prolactin_threshold_ng_ml,
+                           m.ductal_tau_weeks, m.la_tau_weeks,
+                           m.involution_rate_per_week])
+        return BodySample(params=params)
+
+    def log_likelihood(self, body: BodySample, obs) -> float:
+        emax, ed50, base = body.params[0], body.params[1], body.params[2]
+        lw = 0.0
+        if obs.prolactin_ng_ml is not None:
+            prl = base + emax * obs.dose_mg_day / (ed50 + obs.dose_mg_day)
+            sigma = max(0.15 * obs.prolactin_ng_ml, 3.0)
+            lw += -0.5 * ((prl - obs.prolactin_ng_ml) / sigma) ** 2
+        if obs.milk_ml_day is not None:
+            # Approximation: treat the observation's dose as constant from
+            # the drop (documented; titration handled by re-calling with
+            # per-observation doses in a future revision).
+            proto = replace(self.base_protocol,
+                            galactagogue_dose_mg_day=float(obs.dose_mg_day))
+            res = simulate_lactation(proto, total_weeks=self.total_weeks,
+                                     dt_weeks=self.dt_weeks,
+                                     model=_model_from_params(body.params))
+            wk_idx = int(round((self.base_protocol.prep_weeks
+                                + obs.weeks_after_drop) / self.dt_weeks))
+            pred = float(res.milk_ml_day[min(wk_idx, res.milk_ml_day.size - 1)])
+            sigma = max(0.30 * obs.milk_ml_day, 10.0)
+            lw += -0.5 * ((pred - obs.milk_ml_day) / sigma) ** 2
+            body.curves["milk"] = res.milk_ml_day
+            body.weeks = res.weeks
+        return lw
+
+    def finalize(self, bodies: List[BodySample], observations) -> None:
+        """Prolactin-only logs: fill every body's milk curve with the
+        population-default simulation at the mean dose (the predictive
+        bands then carry the prior, weightable by the prolactin update)."""
+        if all("milk" in b.curves for b in bodies):
+            return
+        res = simulate_lactation(self.base_protocol,
+                                 total_weeks=self.total_weeks,
+                                 dt_weeks=self.dt_weeks)
+        for b in bodies:
+            if "milk" not in b.curves:
+                b.curves["milk"] = res.milk_ml_day
+                b.weeks = res.weeks
+
+    def curve_names(self) -> Tuple[str, ...]:
+        return ("milk",)
+
+    # --- posterior-predictive table ------------------------------------------
+    def candidate_label(self, candidate: float) -> str:
+        return f"{candidate:>10.1f}"
+
+    def predict_candidate(self, params: np.ndarray,
+                          candidate: float) -> List[float]:
+        m = _model_from_params(params)
+        emax, ed50, base = params[0], params[1], params[2]
+        prl = base + emax * candidate / (ed50 + candidate)
+        res = simulate_lactation(
+            self.base_protocol, total_weeks=self.base_protocol.prep_weeks + 60,
+            dt_weeks=self.dt_weeks, model=m, individual_prolactin_ng_ml=prl)
+        n_tail = max(1, int(round(8.0 / self.dt_weeks)))
+        return [float(res.milk_ml_day[-n_tail:].mean())]
+
+    # --- population bands / sweep ---------------------------------------------
+    def population_body(self, rng: np.random.Generator,
+                        candidate: float) -> BodySample:
+        m = self.spec.sample(rng)
+        p_drug = None
+        if self.include_drug_uncertainty:
+            emax = self.g.prolactin_emax_ng_ml * float(
+                rng.lognormal(0.0, self.spec.galactagogue_cvs["prolactin_emax_ng_ml"]))
+            ed50 = max(1e-3, self.g.prolactin_ed50_mg_day * float(
+                rng.lognormal(0.0, self.spec.galactagogue_cvs["prolactin_ed50_mg_day"])))
+            base = PROLACTIN_BASELINE_NG_ML * float(
+                rng.lognormal(0.0, self.spec.galactagogue_cvs["baseline"]))
+            d = max(0.0, float(candidate))
+            p_drug = base + emax * d / (ed50 + d)
+        proto = replace(self.base_protocol,
+                        galactagogue_dose_mg_day=float(candidate))
+        res = simulate_lactation(proto, total_weeks=self.total_weeks,
+                                 dt_weeks=self.dt_weeks, model=m,
+                                 individual_prolactin_ng_ml=p_drug)
+        params = np.array([0.0, 0.0, 0.0, m.milk_vmax_ml_day,
+                           m.milk_km_prolactin_ng_ml, m.maturation_tau_weeks,
+                           m.maturation_prolactin_threshold_ng_ml,
+                           m.ductal_tau_weeks, m.la_tau_weeks,
+                           m.involution_rate_per_week])
+        body = BodySample(params=params, weeks=res.weeks)
+        body.curves["milk"] = res.milk_ml_day
+        return body
+
+    def sweep_summary(self, curves: dict) -> dict:
+        milk = curves["milk"]
+        n_tail = max(1, int(round(8.0 / self.dt_weeks)))
+        return {"steady_milk": float(milk[-n_tail:].mean())}
+
+    def sweep_hit(self, summary: dict) -> bool:
+        return summary["steady_milk"] >= self.threshold_ml_day
+
+
+@dataclass
+class PersonalizedResult(DomainPosterior):
+    """Posterior over modeled bodies given a participant's observations.
+
+    The lactation view of :class:`~hormone_sim.measurement.DomainPosterior`
+    (same weighting machinery, milk-shaped accessors).
+    """
+
     prior_spec: SensitivitySpec
 
-    # --- weighted statistics -------------------------------------------------
-    def weighted_percentile(self, values: np.ndarray, p: float) -> float:
-        idx = np.argsort(values)
-        v = values[idx]
-        w = self.weights[idx]
-        cdf = np.cumsum(w)
-        cdf /= cdf[-1]
-        return float(np.interp(p / 100.0, cdf, v))
+    @property
+    def milk(self) -> np.ndarray:
+        return self.curves["milk"]
 
     def band(self, q: float = 0.8) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Weighted (lower, median, upper) milk curves for central mass q."""
-        lo_pct = (1.0 - q) / 2.0
-        hi_pct = (1.0 + q) / 2.0
-        t = self.milk.shape[1]
-        lo = np.array([self.weighted_percentile(self.milk[:, j], lo_pct * 100)
-                       for j in range(t)])
-        med = np.array([self.weighted_percentile(self.milk[:, j], 50.0)
-                        for j in range(t)])
-        hi = np.array([self.weighted_percentile(self.milk[:, j], hi_pct * 100)
-                       for j in range(t)])
-        return lo, med, hi
-
-    def posterior_param(self, name: str, p: float = 50.0) -> float:
-        return self.weighted_percentile(self.params[:, self.param_names.index(name)], p)
+        return super().band(q, which="milk")
 
     def report(self) -> str:
         lines = [
@@ -156,51 +315,14 @@ def posterior_predictive(
     dt_weeks: float = 0.25,
 ) -> str:
     """Weighted supply prediction at candidate next doses — the titration
-    decision table. Reuses each posterior body's own drug + gland parameters."""
-
-    g = get_galactagogue(base_protocol.galactagogue)
-    names = result.param_names
-    lines = [
-        "Posterior predictive — expected steady supply at candidate doses:",
-        f"{'dose mg/d':>10} | {'p10':>6} | {'median':>7} | {'p90':>6}   "
-        f"(mL/day, weighted over YOUR posterior)",
-        "-" * 56,
-    ]
-    for d in candidate_doses:
-        emax = result.params[:, names.index("emax")]
-        ed50 = result.params[:, names.index("ed50")]
-        base = result.params[:, names.index("baseline")]
-        vmax = result.params[:, names.index("milk_vmax")]
-        km = result.params[:, names.index("milk_km")]
-        # Full re-simulation per posterior body at this dose (exact; the
-        # posterior weights carry over unchanged).
-        sims = np.empty(result.weights.size)
-        for i in range(result.weights.size):
-            m = LactationModel(
-                milk_vmax_ml_day=vmax[i],
-                milk_km_prolactin_ng_ml=km[i],
-                maturation_tau_weeks=result.params[i, names.index("mat_tau")],
-                maturation_prolactin_threshold_ng_ml=result.params[i, names.index("mat_thr")],
-                ductal_tau_weeks=result.params[i, names.index("ductal_tau")],
-                la_tau_weeks=result.params[i, names.index("la_tau")],
-                involution_rate_per_week=result.params[i, names.index("invol")],
-            )
-            prl = base[i] + emax[i] * d / (ed50[i] + d)
-            res = simulate_lactation(
-                base_protocol, total_weeks=prep_weeks + 60, dt_weeks=dt_weeks,
-                model=m, individual_prolactin_ng_ml=prl,
-            )
-            n_tail = max(1, int(round(8.0 / dt_weeks)))
-            sims[i] = res.milk_ml_day[-n_tail:].mean()
-        p10 = result.weighted_percentile(sims, 10)
-        med = result.weighted_percentile(sims, 50)
-        p90 = result.weighted_percentile(sims, 90)
-        lines.append(f"{d:>10.1f} | {p10:>6.0f} | {med:>7.0f} | {p90:>6.0f}")
-    lines.append("")
-    lines.append("  Titration reading: choose the smallest dose whose posterior")
-    lines.append("  median clears your supply goal — extra dose beyond the knee")
-    lines.append("  buys little milk and real exposure.")
-    return "\n".join(lines)
+    decision table. Reuses each posterior body's own drug + gland parameters;
+    rendered by the domain-generic table machinery
+    (:func:`hormone_sim.measurement.posterior_predictive_table`)."""
+    domain = LactationDomain(
+        agent=base_protocol.galactagogue, base_protocol=base_protocol,
+        dt_weeks=dt_weeks,
+    )
+    return posterior_predictive_table(domain, result, candidate_doses)
 
 
 def personalize(
@@ -217,9 +339,7 @@ def personalize(
     """Reweight the population ensemble by a participant's measurements."""
     if not observations:
         raise ValueError("personalize() needs at least one Observation")
-    g = get_galactagogue(agent)
     spec = spec or SensitivitySpec()
-    rng = np.random.default_rng(seed)
 
     max_week = max(o.weeks_after_drop for o in observations)
     base_protocol = LactationProtocol(
@@ -229,74 +349,15 @@ def personalize(
         progesterone_start_weeks=progesterone_start_weeks,
         pumping_sessions_per_day=pumping_sessions_per_day,
     )
-
-    param_names = ["emax", "ed50", "baseline", "milk_vmax", "milk_km",
-                   "mat_tau", "mat_thr", "ductal_tau", "la_tau", "invol"]
-    P = np.empty((n, len(param_names)))
-    logw = np.empty(n)
-    milk_curves = None
-    weeks = None
-
     total_weeks = prep_weeks + max(max_week + 8.0, 52.0)
 
-    for i in range(n):
-        m = spec.sample(rng)
-        emax = g.prolactin_emax_ng_ml * float(
-            rng.lognormal(0.0, spec.galactagogue_cvs["prolactin_emax_ng_ml"]))
-        ed50 = max(1e-3, g.prolactin_ed50_mg_day * float(
-            rng.lognormal(0.0, spec.galactagogue_cvs["prolactin_ed50_mg_day"])))
-        base = PROLACTIN_BASELINE_NG_ML * float(
-            rng.lognormal(0.0, spec.galactagogue_cvs["baseline"]))
-
-        P[i] = [emax, ed50, base,
-                m.milk_vmax_ml_day, m.milk_km_prolactin_ng_ml,
-                m.maturation_tau_weeks, m.maturation_prolactin_threshold_ng_ml,
-                m.ductal_tau_weeks, m.la_tau_weeks, m.involution_rate_per_week]
-
-        # Predict + accumulate log-likelihood per observation.
-        lw = 0.0
-        for o in observations:
-            if o.prolactin_ng_ml is not None:
-                prl = base + emax * o.dose_mg_day / (ed50 + o.dose_mg_day)
-                sigma = max(0.15 * o.prolactin_ng_ml, 3.0)
-                lw += -0.5 * ((prl - o.prolactin_ng_ml) / sigma) ** 2
-            if o.milk_ml_day is not None:
-                # Approximation: treat the observation's dose as constant from
-                # the drop (documented; titration handled by re-calling with
-                # per-observation doses in a future revision).
-                proto = replace(base_protocol,
-                                galactagogue_dose_mg_day=float(o.dose_mg_day))
-                res = simulate_lactation(proto, total_weeks=total_weeks,
-                                         dt_weeks=dt_weeks, model=m)
-                wk_idx = int(round((prep_weeks + o.weeks_after_drop) / dt_weeks))
-                pred = float(res.milk_ml_day[min(wk_idx, res.milk_ml_day.size - 1)])
-                sigma = max(0.30 * o.milk_ml_day, 10.0)
-                lw += -0.5 * ((pred - o.milk_ml_day) / sigma) ** 2
-                if milk_curves is None:
-                    milk_curves = np.empty((n, res.milk_ml_day.size))
-                    weeks = res.weeks
-                milk_curves[i] = res.milk_ml_day
-        logw[i] = lw
-
-    if milk_curves is None:
-        # Prolactin-only observations: run the curves once at mean dose for
-        # the predictive bands.
-        res = simulate_lactation(base_protocol, total_weeks=total_weeks,
-                                 dt_weeks=dt_weeks)
-        milk_curves = np.tile(res.milk_ml_day, (n, 1))
-        weeks = res.weeks
-
-    w = np.exp(logw - logw.max())
-    w /= w.sum()
-    ess = 1.0 / np.sum(w ** 2) if w.sum() > 0 else 0.0
-
+    domain = LactationDomain(
+        agent=agent, base_protocol=base_protocol, spec=spec,
+        dt_weeks=dt_weeks, total_weeks=total_weeks,
+    )
+    post = personalize_domain(domain, observations, n=n, seed=seed)
     return PersonalizedResult(
-        observations=list(observations),
-        weights=w,
-        ess=float(ess),
-        param_names=param_names,
-        params=P,
-        weeks=weeks,
-        milk=milk_curves,
-        prior_spec=spec,
+        domain=domain, observations=post.observations, weights=post.weights,
+        ess=post.ess, param_names=post.param_names, params=post.params,
+        curves=post.curves, weeks=post.weeks, prior_spec=spec,
     )

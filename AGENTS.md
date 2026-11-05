@@ -64,13 +64,14 @@ opinion and not a modeling target.
 | Galactagogues / lactation | `galactagogues.py`, `progestogens.py`, `lactation.py`, `comparison.py`, `risk_exposure.py` | D2-antagonist registry; Newman–Goldfarb protocol (two-compartment priming, P-withdrawal gate, taper, E2 brake); equieffective compare; low-dose sweep; TD exposure framing |
 | Trans-masc | `androgens.py`, `masculinization.py`, `erythrocytosis.py` | T ester/gel PK (peak–trough quantified), reversed HPG suppression, outcome clocks (cessation anchor ~5 mo), CBC-monitorable risk framing |
 | Intersex | `intersex.py` | Five cited condition packs (CAIS, PAIS*, CAH, Klinefelter, Turner) as baseline overlays with anchor ratings + limits (*PAIS framework-only) |
-| Study layer | `personalization.py`, `personalization_androgen.py`, `ingest.py`, `aims.py`, `protocol.py` | Importance-sampling personal inference (lactation + T logs), fail-closed CSV ingest, AIMS TD tracking, IRB-style protocol skeleton with live expected values |
-| CLI | `cli.py` | `run scan pop compound hypothetical breast galactagogues lactation compare sweep risk personalize ingest aims protocol androgens masc hct intersex ingest-t` |
+| Study layer | `measurement.py`, `personalization.py`, `personalization_androgen.py`, `ingest.py`, `aims.py`, `protocol.py`, `aggregation.py` | Domain-generic measurement-model engine (importance sampling, predictive tables, population sweeps); per-domain adapters (lactation + T logs); fail-closed CSV ingest; AIMS TD tracking; protocol skeletons for both domains (live expected values); de-identified cohort summaries |
+| CLI | `cli.py` | `run scan pop compound hypothetical breast galactagogues lactation compare sweep risk personalize ingest aims protocol androgens masc hct intersex ingest-t protocol-t sweep-t cohort` |
 
-Version at writing: **0.9.0**, **168 passing tests** across
+Version at writing: **0.10.0**, **196 passing tests** across
 `tests/test_hormone_sim.py`, `test_estrogenic.py`, `test_galactagogues.py`,
 `test_lactation_v2.py`, `test_lowdose_risk.py`, `test_v3_lactation.py`,
-`test_study_tools.py`, `test_masc.py`, `test_intersex_t.py`.
+`test_study_tools.py`, `test_masc.py`, `test_intersex_t.py`,
+`test_t_figure.py`, `test_aggregation.py`, `test_measurement.py`.
 
 ## 4. Load-bearing modeling decisions (do not silently change)
 
@@ -102,21 +103,34 @@ These encode hard-won calibration lessons; several were *caught by tests*:
   distinct.
 - **Personal inference is importance sampling** with ESS diagnostics —
   a few observations leave posterior ≈ prior, and the tool says so.
+- **The study layer's engine is domain-generic (`measurement.py`); domains
+  are descriptors.** Personalization, predictive tables, and population
+  sweeps run once, over a `MeasurementDomain` adapter (sample body /
+  log-likelihood / curve names). Determinism contract: domains draw RNG
+  *only* in `sample_body` — never in `log_likelihood` — so results stay
+  reproducible and the behavior-preservation tests
+  (`tests/test_measurement.py`, which re-implement the pre-abstraction
+  loops and require bit-for-bit agreement) keep new domains honest.
 
 ## 5. Where the research continues (open items at time of writing)
 
-### 5a. Engineering completions (no new science needed)
+### 5a. Engineering completions — DONE (v0.10.0; no new science was needed)
 
-1. **Naming generalization**: `sweep`/`compare`/`personalize` are
-   lactation-flavored; generalize over a measurement-model abstraction so
-   the study layer treats domains uniformly.
-2. **`aims`/`protocol` generators** are lactation-specific; a masc variant
-   of the protocol generator (T titration + CBC schedule) is mostly
-   parameter substitution.
-3. **Personalized figure for T logs** (`ingest-t` prints tables; no PNG yet
-   — mirror `plot_personal`).
-4. **Aggregation view**: multi-participant cohort summaries for a running
-   case series (de-identified), feeding the protocol's statistical plan.
+1. ✅ **Measurement-model abstraction**: the study layer's importance-
+   sampling engine, posterior-predictive tables, and population sweeps are
+   domain-generic (`measurement.py`); lactation and T domains are adapters
+   (`LactationDomain`, `AndrogenDomain`); behavior preserved bit-for-bit
+   against reference-loop tests. `sweep-t` is the first T-side sweep.
+   (`compare` remains lactation-presenting by design — equieffective-
+   prolactin matching is a trans-fem compound-selection question.)
+2. ✅ **Masc protocol generator**: `protocol-t` / `generate_androgen_protocol`
+   — T titration + CBC schedule, live trough/mean/peak + Hct-plateau
+   expected values, gel-vs-depot language.
+3. ✅ **Personalized figure for T logs**: `ingest-t --out` writes the
+   posterior-vs-prior T/Hct figure (`plot_personal_androgen`).
+4. ✅ **Aggregation view**: `cohort` / `aggregation.py` — de-identified
+   multi-participant summaries from a study-ID manifest, feeding the
+   protocols' statistical plans.
 
 ### 5b. Scientific expansions (need literature anchors first — cite or skip)
 

@@ -1,9 +1,20 @@
 """Command-line interface for hormone-sim.
 
 Subcommands:
-  run    Simulate one regimen (YAML) and report + plot.
-  scan   Sweep a dose range for a route; report steady-state E2 vs dose.
-  pop    Monte-Carlo population simulation; report target-achievement rates.
+  run/scan/pop            Estradiol regimens: single, dose scan, population bands.
+  compound/hypothetical   Phytoestrogen registry; inverse design.
+  breast                  EE-driven breast development.
+  galactagogues/lactation/compare/sweep/risk
+                          Lactation induction: registry, protocol simulation,
+                          equieffective comparison, low-dose sweep, TD exposure.
+  personalize/ingest      Personal inference from measured points / CSV log.
+  aims/protocol           AIMS monitoring; IRB-style lactation protocol skeleton.
+  androgens/masc/hct      T agents, masculinization outcomes, erythrocytosis.
+  intersex                Condition packs (baselines + anchor ratings).
+  ingest-t/protocol-t/sweep-t
+                          The trans-masculine study layer: T-log inference,
+                          T-titration protocol skeleton, regimen sweep.
+  cohort                  De-identified multi-participant case-series summary.
 
 This CLI is a research/education tool. It produces population-typical curves,
 not individualized dosing.
@@ -60,12 +71,21 @@ from .personalization import Observation, personalize, posterior_predictive
 from .ingest import load_observations, personalize_from_csv, plot_personal
 from .aims import AIMSRecord, parse_visit
 from .protocol import ProtocolConfig, generate_protocol
+from .protocol import AndrogenProtocolConfig, generate_androgen_protocol
 from .androgens import ANDROGENS, get_androgen, simulate_androgen
 from .intersex import PACKS as INTERSEX_PACKS, get_pack, pack_summary
 from .personalization_androgen import (
     load_androgen_observations,
     personalize_androgen,
     posterior_predictive_androgen,
+    plot_personal_androgen,
+    androgen_population_sweep,
+    androgen_sweep_table,
+)
+from .aggregation import (
+    load_cohort,
+    cohort_report,
+    write_cohort_csv,
 )
 from .masculinization import simulate_masculinization, simulate_masc_population
 from .erythrocytosis import hct_risk_report
@@ -440,6 +460,35 @@ def cmd_sweep(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sweep_t(args: argparse.Namespace) -> int:
+    """T regimen sweep: trough/mean/peak bands + trough-in-range fraction."""
+    candidates = [(d, i) for d in args.doses for i in args.intervals]
+    trough_range = (args.trough_low, args.trough_high)
+    rows = androgen_population_sweep(
+        agent=args.agent, candidates=candidates, n=args.n, seed=args.seed,
+        trough_range_ngdl=trough_range)
+    print(androgen_sweep_table(rows, args.agent, trough_range_ngdl=trough_range))
+    if args.out:
+        import csv
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with out.open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow(["agent", "dose_mg", "interval_days",
+                        "trough_p10", "trough_p50", "trough_p90",
+                        "mean_p50", "peak_p50", "frac_trough_in_range"])
+            for (dose, interval), r in zip(candidates, rows):
+                w.writerow([args.agent, dose, interval,
+                            round(r.metric("trough", "p10"), 1),
+                            round(r.metric("trough", "p50"), 1),
+                            round(r.metric("trough", "p90"), 1),
+                            round(r.metric("mean", "p50"), 1),
+                            round(r.metric("peak", "p50"), 1),
+                            round(r.frac_hit, 4)])
+        print(f"\nWrote: {out}")
+    return 0
+
+
 def cmd_risk(args: argparse.Namespace) -> int:
     """Structured risk-exposure framing for a planned galactagogue course."""
     prof = exposure_report(
@@ -565,6 +614,29 @@ def cmd_protocol(args: argparse.Namespace) -> int:
         title=args.title,
     )
     doc = generate_protocol(cfg)
+    if args.out:
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.out).write_text(doc)
+        print(f"Wrote protocol skeleton: {args.out}")
+    else:
+        print(doc)
+    return 0
+
+
+def cmd_protocol_t(args: argparse.Namespace) -> int:
+    """Generate the trans-masculine (T titration + CBC) protocol skeleton."""
+    kw = dict(
+        agent=args.agent,
+        start_dose_mg=args.start_dose,
+        max_dose_mg=args.max_dose,
+        interval_days=args.interval_days,
+        duration_weeks=args.duration_weeks,
+        site=args.site, pi=args.pi,
+    )
+    if args.title:
+        kw["title"] = args.title
+    cfg = AndrogenProtocolConfig(**kw)
+    doc = generate_androgen_protocol(cfg)
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)
         Path(args.out).write_text(doc)
@@ -705,6 +777,27 @@ def cmd_ingest_t(args: argparse.Namespace) -> int:
     candidates = list(zip(args.doses, [args.interval_days] * len(args.doses)))
     print(posterior_predictive_androgen(result, args.agent, candidates,
                                         weeks=args.pred_weeks))
+    if args.out:
+        plot_personal_androgen(result, obs,
+                               out_path=str(Path(args.out)),
+                               title="Personalized T posterior (T log)")
+        print(f"\nWrote: {args.out}")
+    return 0
+
+
+def cmd_cohort(args: argparse.Namespace) -> int:
+    """De-identified multi-participant case-series summary from a manifest."""
+    summaries = load_cohort(
+        args.manifest,
+        milk_unit=args.milk_unit,
+        default_dose_mg_day=args.default_dose,
+        default_interval_days=args.default_interval_days,
+        milk_threshold_ml_day=args.milk_threshold,
+    )
+    print(cohort_report(summaries, milk_threshold_ml_day=args.milk_threshold))
+    if args.out:
+        write_cohort_csv(summaries, args.out)
+        print(f"\nWrote: {args.out}")
     return 0
 
 
@@ -822,6 +915,24 @@ def build_parser() -> argparse.ArgumentParser:
     psw.add_argument("--out", help="write sweep CSV")
     psw.set_defaults(func=cmd_sweep)
 
+    pst = sub.add_parser("sweep-t",
+                         help="T regimen sweep; quantifies between-body "
+                         "heterogeneity in trough/mean/peak exposure")
+    pst.add_argument("--agent", default="testosterone_cypionate",
+                     choices=sorted(ANDROGENS.keys()))
+    pst.add_argument("--doses", nargs="+", type=float,
+                     default=[50, 80, 100, 150], help="mg per dose")
+    pst.add_argument("--intervals", nargs="+", type=float, default=[7.0],
+                     help="injection interval(s) in days")
+    pst.add_argument("--n", type=int, default=100, help="modeled bodies per regimen")
+    pst.add_argument("--seed", type=int, default=42)
+    pst.add_argument("--trough-low", type=float, default=300.0,
+                     help="target trough range low (ng/dL)")
+    pst.add_argument("--trough-high", type=float, default=1000.0,
+                     help="target trough range high (ng/dL)")
+    pst.add_argument("--out", help="write sweep CSV")
+    pst.set_defaults(func=cmd_sweep_t)
+
     prk = sub.add_parser("risk",
                          help="structured risk-exposure framing for a planned course")
     prk.add_argument("--agent", default="metoclopramide",
@@ -892,6 +1003,22 @@ def build_parser() -> argparse.ArgumentParser:
     ppr.add_argument("--out", help="write protocol markdown")
     ppr.set_defaults(func=cmd_protocol)
 
+    ppt = sub.add_parser("protocol-t",
+                         help="generate the trans-masculine T-titration "
+                         "protocol skeleton (CBC safety monitoring)")
+    ppt.add_argument("--agent", default="testosterone_cypionate",
+                     choices=sorted(ANDROGENS.keys()))
+    ppt.add_argument("--start-dose", type=float, default=80.0, help="mg per dose")
+    ppt.add_argument("--max-dose", type=float, default=200.0, help="mg per dose")
+    ppt.add_argument("--interval-days", type=float, default=7.0)
+    ppt.add_argument("--duration-weeks", type=float, default=24.0,
+                     help="titration window (weeks)")
+    ppt.add_argument("--site", default="[SITE — clinic name, city]")
+    ppt.add_argument("--pi", default="[PRINCIPAL INVESTIGATOR]")
+    ppt.add_argument("--title", default=None)
+    ppt.add_argument("--out", help="write protocol markdown")
+    ppt.set_defaults(func=cmd_protocol_t)
+
     pan = sub.add_parser("androgens",
                          help="list androgen agents or detail one")
     pan.add_argument("--name", help="agent name; omit to list all")
@@ -941,7 +1068,27 @@ def build_parser() -> argparse.ArgumentParser:
     pit.add_argument("--interval-days-pred", type=float, default=7.0,
                      dest="interval_days")
     pit.add_argument("--pred-weeks", type=float, default=12.0)
+    pit.add_argument("--out", help="write posterior-vs-prior figure PNG")
     pit.set_defaults(func=cmd_ingest_t)
+
+    pco = sub.add_parser("cohort",
+                         help="de-identified multi-participant case-series "
+                         "summary from a cohort manifest CSV")
+    pco.add_argument("--manifest", required=True,
+                     help="manifest CSV: study_id,csv,domain "
+                     "(domain: lactation | t_log)")
+    pco.add_argument("--milk-unit", default="ml", choices=["ml", "oz"],
+                     help="milk column unit for lactation logs")
+    pco.add_argument("--default-dose", type=float, default=None,
+                     help="default galactagogue dose for lactation logs "
+                     "missing dose_mg_day")
+    pco.add_argument("--default-interval-days", type=float, default=None,
+                     help="default interval for T logs missing interval_days")
+    pco.add_argument("--milk-threshold", type=float, default=50.0,
+                     help="'meaningful supply' threshold for weeks-to-"
+                     "threshold (mL/day)")
+    pco.add_argument("--out", help="write per-participant summary CSV")
+    pco.set_defaults(func=cmd_cohort)
 
     return p
 
