@@ -35,8 +35,24 @@ from .breast_development import (
     BreastResult,
     simulate_breast_development,
 )
+from .galactagogues import (
+    GALACTAGOGUES,
+    Galactagogue,
+    get_galactagogue,
+    simulate_dosing_pk,
+    prolactin_response,
+    prolactin_curve,
+    list_galactagogues,
+    PROLACTIN_BASELINE_NG_ML,
+)
+from .lactation import (
+    LactationModel,
+    LactationProtocol,
+    LactationResult,
+    simulate_lactation,
+)
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "simulate",
@@ -67,5 +83,18 @@ __all__ = [
     "BreastModel",
     "BreastResult",
     "simulate_breast_development",
+    # galactagogues / lactation
+    "GALACTAGOGUES",
+    "Galactagogue",
+    "get_galactagogue",
+    "simulate_dosing_pk",
+    "prolactin_response",
+    "prolactin_curve",
+    "list_galactagogues",
+    "PROLACTIN_BASELINE_NG_ML",
+    "LactationModel",
+    "LactationProtocol",
+    "LactationResult",
+    "simulate_lactation",
     "__version__",
 ]

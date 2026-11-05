@@ -30,6 +30,7 @@ of pre‑clinical modeling that precedes and informs properly supervised clinica
 | **Estrogenic activity** | A registry of real phytoestrogens (genistein, coumestrol, …) plus a constructor for *hypothetical* molecules, each characterized by relative estrogenic activity (REA) vs estradiol. Folds any compound's plasma curve into **estradiol‑equivalents (EE)** so breast‑growth creams, soy supplements, and estradiol sit on one scale. |
 | **Inverse design** | Given a target EE (e.g. the 100–200 pg/mL window), what dose does a candidate/hypothetical molecule need? "Care yet to be discovered" explored as a property space. |
 | **Breast development** | Cumulative‑EE‑driven saturating‑growth model mapped to Tanner stages (population‑typical; genetics dominate the ceiling). |
+| **Galactagogues & lactation** | D2‑antagonist registry (metoclopramide, domperidone, sulpiride, amisulpride) with PK + prolactin Emax/ED50 dose‑response; Newman–Goldfarb induction protocol (E2+P priming → drop → galactagogue + pumping) → milk‑production timeline. **No controlled trials in trans women** — calibrated from postpartum cis literature, large uncertainty flagged. |
 
 The model is deliberately **simplified and transparent**: every parameter is a named,
 citable constant (see [`docs/references.md`](docs/references.md)), and the few that are
@@ -67,6 +68,14 @@ hormone-sim hypothetical --name future-drug --rea 0.5 --target-ee 150
 
 # Breast development: Tanner stage over 2 years on transdermal 50 µg/day
 hormone-sim breast --regimen configs/tf_transdermal.yaml --weeks 104
+
+# Galactagogues: registry + prolactin dose-response
+hormone-sim galactagogues
+hormone-sim galactagogues --name domperidone
+
+# Lactation induction: Newman-Goldfarb protocol, 7 mo prep, domperidone 40 mg/day
+hormone-sim lactation --galactagogue domperidone --dose 40 \
+    --prep-weeks 30 --sessions 8 --out outputs/
 ```
 
 Programmatic use:

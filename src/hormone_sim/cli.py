@@ -42,6 +42,14 @@ from .estrogenic_activity import (
     TargetProfile,
 )
 from .breast_development import simulate_breast_development
+from .galactagogues import (
+    GALACTAGOGUES,
+    get_galactagogue,
+    prolactin_response,
+    prolactin_curve,
+    list_galactagogues,
+)
+from .lactation import LactationProtocol, simulate_lactation
 
 
 def _safe_slug(name: str) -> str:
@@ -220,6 +228,104 @@ def cmd_breast(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_galactagogues(args: argparse.Namespace) -> int:
+    """List pharmacologic galactagogues, or detail one + its prolactin response."""
+    if args.name:
+        g = get_galactagogue(args.name)
+        print(f"Galactagogue: {g.name}")
+        print(f"  half-life:       {g.half_life_h:g} h")
+        print(f"  bioavailability: {g.bioavailability:g}")
+        print(f"  Vd:              {g.vd_l_kg:g} L/kg")
+        print(f"  prolactin Emax:  +{g.prolactin_emax_ng_ml:g} ng/mL")
+        print(f"  prolactin ED50:  {g.prolactin_ed50_mg_day:g} mg/day")
+        print(f"  US-approved:     {g.approved_us}")
+        print(f"  safety:          {g.safety_note}")
+        print(f"  source:          {g.citation}")
+        print()
+        print(f"  Prolactin (ng/mL) vs daily dose:")
+        print(f"  {'10 mg/d':>9} | {'30 mg/d':>9} | {'60 mg/d':>9} | {'90 mg/d':>9}")
+        row = [prolactin_response(g, d) for d in (10, 30, 60, 90)]
+        print("  " + " | ".join(f"{v:>9.0f}" for v in row))
+        print()
+        print("  PK note: domperidone accumulates over ~3-5 days (t1/2 ~15 h);")
+        print("  metoclopramide reaches steady state in ~1-2 days (t1/2 ~5.5 h).")
+        return 0
+
+    print(list_galactagogues())
+    return 0
+
+
+def cmd_lactation(args: argparse.Namespace) -> int:
+    """Simulate a Newman-Goldfarb-style lactation induction protocol."""
+    protocol = LactationProtocol(
+        galactagogue=args.galactagogue,
+        galactagogue_dose_mg_day=args.dose,
+        prep_weeks=args.prep_weeks,
+        pumping_sessions_per_day=args.sessions,
+    )
+    result = simulate_lactation(
+        protocol,
+        total_weeks=args.prep_weeks + args.lactation_weeks,
+        dt_weeks=0.25,
+    )
+    print(result.report())
+    print()
+    print("  Post-drop milk ramp (mL/day):")
+    drop = protocol.prep_weeks
+    for wk in (0, 1, 2, 4, 6, 8, 12, 26, 52):
+        i = int(round((drop + wk) / 0.25))
+        if i < result.milk_ml_day.size:
+            print(f"    +{wk:>2} wk: {result.milk_ml_day[i]:>6.1f}")
+    if args.out:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from .galactagogues import PROLACTIN_BASELINE_NG_ML
+
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(9, 9), sharex=True,
+                                            constrained_layout=True)
+        ax1.plot(result.weeks, result.priming, color="#8e44ad", lw=1.8,
+                 label="priming (E2+P preparation)")
+        ax1.plot(result.weeks, result.maturation, color="#e67e22", lw=1.8,
+                 label="lactogenesis maturation")
+        ax1.set_ylabel("index (0-1)")
+        ax1.legend(fontsize=8)
+        ax1.grid(alpha=0.3)
+
+        ax2.plot(result.weeks, result.prolactin, color="#c0392b", lw=1.8)
+        ax2.axhline(PROLACTIN_BASELINE_NG_ML, color="#999", ls=":", lw=0.8,
+                    label="baseline")
+        ax2.set_ylabel("Prolactin (ng/mL)")
+        ax2.legend(fontsize=8)
+        ax2.grid(alpha=0.3)
+
+        ax3.fill_between(result.weeks, 0, result.milk_ml_day, color="#2980b9",
+                         alpha=0.35)
+        ax3.plot(result.weeks, result.milk_ml_day, color="#2980b9", lw=1.8)
+        ax3.set_ylabel("Milk (mL/day)")
+        ax3.set_xlabel("Weeks")
+        ax3.grid(alpha=0.3)
+
+        drop = protocol.prep_weeks
+        for ax in fig.axes:
+            ax.axvline(drop, color="#666", ls="--", lw=0.8)
+
+        fig.suptitle(
+            f"Lactation induction — {protocol.galactagogue} "
+            f"{protocol.galactagogue_dose_mg_day:g} mg/day, "
+            f"{protocol.prep_weeks:g} wk prep, "
+            f"{protocol.pumping_sessions_per_day:g} sessions/day",
+            fontsize=11,
+        )
+        out = Path(args.out)
+        out.mkdir(parents=True, exist_ok=True)
+        png = out / f"lactation_{protocol.galactagogue}_{int(protocol.galactagogue_dose_mg_day)}mg.png"
+        fig.savefig(png, dpi=130)
+        plt.close(fig)
+        print(f"\nWrote: {png}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="hormone-sim",
@@ -276,6 +382,26 @@ def build_parser() -> argparse.ArgumentParser:
                     help="flat EE exposure (pg/mL) if no --regimen given")
     pb.add_argument("--weeks", type=float, default=104.0, help="horizon (default 2 yr)")
     pb.set_defaults(func=cmd_breast)
+
+    pg = sub.add_parser("galactagogues",
+                        help="list pharmacologic galactagogues or detail one")
+    pg.add_argument("--name", help="galactagogue name; omit to list all")
+    pg.set_defaults(func=cmd_galactagogues)
+
+    pl = sub.add_parser("lactation",
+                        help="simulate Newman-Goldfarb-style lactation induction")
+    pl.add_argument("--galactagogue", default="domperidone",
+                    choices=sorted(GALACTAGOGUES.keys()))
+    pl.add_argument("--dose", type=float, default=40.0,
+                    help="galactagogue daily dose (mg/day)")
+    pl.add_argument("--prep-weeks", type=float, default=30.0,
+                    help="E2+progestogen preparation phase (weeks)")
+    pl.add_argument("--sessions", type=float, default=8.0,
+                    help="pumping/suckling sessions per day")
+    pl.add_argument("--lactation-weeks", type=float, default=52.0,
+                    help="lactation phase to simulate after the drop (weeks)")
+    pl.add_argument("--out", help="output directory for the figure")
+    pl.set_defaults(func=cmd_lactation)
 
     return p
 

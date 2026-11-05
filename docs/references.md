@@ -74,6 +74,44 @@ calibrated to the population-typical Tanner trajectory and explicitly does NOT
 claim individual prediction — breast size is dominated by genetics, age-at-start,
 and adiposity, none of which this simple model captures.
 
+## Galactagogues & lactation induction (trans-feminine)
+
+**Evidence gap, stated plainly:** pharmacologic galactagogue data comes from
+postpartum cis women and medication-induced hyperprolactinemia. There are **no
+controlled trials in trans women**. The registry below is parameterized from that
+cis literature and extrapolated to trans-feminine physiology (on estradiol, no
+pregnancy priming). Treat all outputs as a mechanistic reasoning tool.
+
+- **Metoclopramide PK:** t½ ~5–6 h, oral F ~80%, Vd ~2.5 L/kg. Prolactin rise
+  ~30–80 ng/mL at 10 mg TID/QID. *StatPearls (Metoclopramide); Sankar et al.,
+  "Galactagogues," 2017 review.* Boxed warning: tardive dyskinesia.
+- **Domperidone PK:** t½ ~14–16 h, oral F ~13–17% (hepatic first-pass + CYP3A4
+  degradation), Vd ~3 L/kg. Prolactin rise ~50–150 ng/mL at 10–20 mg TID/QID.
+  *OSHERC (Ontario Agency for Health Protection), "Domperidone for lactation,"
+  2018; Newman & Goldfarb, protocol literature (drjacknewman.com).* **Not
+  FDA-approved** (QT prolongation/arrhythmia risk).
+- **Sulpiride / amisulpride:** antipsychotic D2 antagonists used off-label as
+  galactagogues in some countries; potent hyperprolactinemia. *Azad et al., 2019
+  review of pharmacologic galactagogues.*
+- **Prolactin physiology:** TIDA-neuron D2 inhibition of lactotrophs; pregnancy
+  ~200–400 ng/mL at term; lactation ~100–300 ng/mL. *Cowie, Forsyth & Hart,
+  "Hormonal Control of Lactation," 1980; Ben-Jonathan et al., 2008.*
+- **Protocol:** Newman–Goldfarb induction (E2+progestogen priming → abrupt
+  drop → D2 antagonist + pumping 8–12 sessions/day). Trans-feminine outcomes are
+  **case reports only**; partial supply (tens-to-low-hundreds of mL/day) is the
+  reported norm, not full lactation.
+- **Model uncertainty:** `milk_vmax`, `milk_km_prolactin`, priming rate, and
+  involution rate are calibrated with LARGE uncertainty; the lactogenesis
+  maturation time constant is the least-constrained parameter in the whole model.
+
+**Herbal galactagogues (fenugreek, blessed thistle, shatavari, moringa) are
+deliberately excluded from the registry.** They have no established D2-antagonist
+mechanism, no quantifiable prolactin dose-response, and RCT evidence in any
+population is weak-to-negative (see *Bazzano et al., 2016; Mortel & Mehta, 2013*).
+Modeling them with invented potency numbers would be fabrication, not research.
+They can be compared on the estrogenic-activity layer instead (see
+`compounds.py`) if a compound there has a plausible receptor mechanism.
+
 ## Units
 
 - Estradiol: 1 pg/mL = 3.671 pmol/L.
