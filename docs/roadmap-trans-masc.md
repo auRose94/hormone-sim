@@ -1,6 +1,6 @@
-# Roadmap: trans-masculine / masculinization wave (hormone-sim v0.8+)
+# Trans-masculine / masculinization wave (hormone-sim v0.8+)
 
-**Status: planned, not built.** This document exists so the next wave starts
+**Status: core built (androgens PK, masculinization PD, erythrocytosis framing, population bands); study-layer generalization (ingest/personalize for T logs) still open.** This document exists so the next wave starts
 from a plan instead of a blank file — and so anyone picking the project up
 later (including other trans researchers, which is the point of sharing it)
 can see the intended architecture before writing code.
@@ -92,12 +92,16 @@ Cumulative-exposure-driven, saturating, population-typical — same honest
 * Same governance everywhere: population model ≠ dosing advice; experimental
   use goes through the study layer with a clinician.
 
-## 7. Suggested build order (next round)
+## 7. Build status
 
-1. `androgens.py` registry + T PK (esters first — the peak/trough story is
-   the highest-value output)
-2. T target ranges + HPG suppression anchors in `params.py`
-3. `masculinization.py` (anchor on menstrual cessation; others qualitative)
-4. Risk-exposure: erythrocytosis module
-5. `sweep`/`compare`/`personalize` generalization pass (they're
-   currently estradiol-flavored in naming)
+1. ✅ `androgens.py` registry + T PK (esters' peak/trough quantified:
+   200 mg/2wk → peak ~1800/trough ~520; weekly 100 mg same mean, half the swing;
+   gel flat; ovarian output suppressed 87–97%)
+2. ✅ HPG suppression anchors (reversed direction; cycle-cessation anchor
+   lands at ~5 months, the calibrated target)
+3. ✅ `masculinization.py` (anchored on cessation; voice/hair/body/bottom
+   saturating clocks with genetics-dominant ceilings)
+4. ✅ `erythrocytosis.py` — the mirror-image risk framing: biomarker exists
+   (CBC), dose/route-dependent, reversible; route note (injections > gel)
+5. ⬜ `sweep`/`compare`/`personalize` generalization pass (still
+   estradiol-flavored in naming — next step for the study layer on T logs)

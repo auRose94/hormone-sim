@@ -93,8 +93,31 @@ from .aims import (
     parse_visit,
 )
 from .protocol import ProtocolConfig, generate_protocol
+from .androgens import (
+    ANDROGENS,
+    Androgen,
+    get_androgen,
+    simulate_androgen,
+    ugl_to_ngdl,
+    ngdl_to_ugl,
+    BASELINE_T_NGDL,
+    BASELINE_E2_PGML,
+)
+from .masculinization import (
+    MasculinizationModel,
+    MascResult,
+    simulate_masculinization,
+    MascPopulationResult,
+    simulate_masc_population,
+)
+from .erythrocytosis import (
+    HctModel,
+    HctResult,
+    simulate_hct,
+    hct_risk_report,
+)
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 __all__ = [
     "simulate",
@@ -171,5 +194,22 @@ __all__ = [
     "parse_visit",
     "ProtocolConfig",
     "generate_protocol",
+    "ANDROGENS",
+    "Androgen",
+    "get_androgen",
+    "simulate_androgen",
+    "ugl_to_ngdl",
+    "ngdl_to_ugl",
+    "BASELINE_T_NGDL",
+    "BASELINE_E2_PGML",
+    "MasculinizationModel",
+    "MascResult",
+    "simulate_masculinization",
+    "MascPopulationResult",
+    "simulate_masc_population",
+    "HctModel",
+    "HctResult",
+    "simulate_hct",
+    "hct_risk_report",
     "__version__",
 ]

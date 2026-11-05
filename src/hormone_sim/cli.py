@@ -60,6 +60,9 @@ from .personalization import Observation, personalize, posterior_predictive
 from .ingest import load_observations, personalize_from_csv, plot_personal
 from .aims import AIMSRecord, parse_visit
 from .protocol import ProtocolConfig, generate_protocol
+from .androgens import ANDROGENS, get_androgen, simulate_androgen
+from .masculinization import simulate_masculinization, simulate_masc_population
+from .erythrocytosis import hct_risk_report
 from .lactation import LactationProtocol as _LP
 
 
@@ -565,6 +568,101 @@ def cmd_protocol(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_androgens(args: argparse.Namespace) -> int:
+    """List androgen agents, or detail one."""
+    if args.name:
+        a = get_androgen(args.name)
+        print(f"Androgen: {a.name}")
+        print(f"  input kind:   {a.input_kind}")
+        print(f"  T t1/2:       {a.half_life_h:g} h (molecule; apparent)")
+        print(f"  Vd:           {a.vd_l_kg:g} L/kg")
+        print(f"  F:            {a.bioavailability:g}")
+        if a.depot_half_life_days:
+            print(f"  depot t1/2:   {a.depot_half_life_days:g} d")
+        print(f"  typical:      {a.typical_dose_mg:g} mg / "
+              f"{a.typical_interval_days:g} d")
+        print(f"  note:         {a.note}")
+        print(f"  source:       {a.citation}")
+        return 0
+    print("Registered androgen agents:")
+    print(f"{'name':>28} | {'kind':>10} | {'depot t1/2':>10} | {'typical':>12}")
+    print("-" * 70)
+    for name in sorted(ANDROGENS):
+        a = ANDROGENS[name]
+        depot = f"{a.depot_half_life_days:g} d" if a.depot_half_life_days else "n/a"
+        print(f"{name:>28} | {a.input_kind:>10} | {depot:>10} | "
+              f"{a.typical_dose_mg:g} mg/{a.typical_interval_days:g} d")
+    print("\nOral testosterone undecanoate is deliberately unregistered "
+          "(food-dependent variable absorption).")
+    return 0
+
+
+def cmd_masc(args: argparse.Namespace) -> int:
+    """Simulate masculinization outcomes on a T regimen."""
+    a = get_androgen(args.agent)
+    res = simulate_masculinization(a, args.dose, args.interval_days,
+                                   weeks=args.weeks)
+    print(res.report())
+    print()
+    if args.n:
+        pop = simulate_masc_population(a, args.dose, args.interval_days,
+                                       weeks=args.weeks, n=args.n, seed=args.seed)
+        print(pop.report())
+    if args.out:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from .erythrocytosis import simulate_hct, HctModel
+        weeks_ax = res.weeks
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(9, 7), sharex=True,
+                                       constrained_layout=True)
+        ax1.plot(weeks_ax, res.t_ngdl, color="#16a085", lw=1.4,
+                 label="T (peak-trough)")
+        ax1.plot(weeks_ax, res.t_mean_ngdl, color="#000", lw=1.0, ls="--",
+                 label="T trailing mean (drive)")
+        ax1.axhspan(300, 1000, color="#16a085", alpha=0.10,
+                    label="male reference 300-1000")
+        ax1.set_ylabel("Testosterone (ng/dL)")
+        ax1.legend(fontsize=7); ax1.grid(alpha=0.3)
+        ax1b = ax1.twinx()
+        ax1b.plot(weeks_ax, res.cycle_ceased_prob * 100, color="#c0392b", lw=1.8,
+                  label="cycle cessation (%)")
+        ax1b.set_ylabel("Cycle cessation (%)", color="#c0392b")
+        ax1b.set_ylim(0, 105)
+
+        hct = simulate_hct(a, args.dose, args.interval_days, weeks=args.weeks)
+        ax2.plot(weeks_ax, res.voice, color="#8e44ad", lw=1.8, label="voice")
+        ax2.plot(weeks_ax, res.hair, color="#7f8c8d", lw=1.8, label="hair")
+        ax2.plot(weeks_ax, res.body_comp, color="#f39c12", lw=1.8, label="body comp")
+        ax2.plot(weeks_ax, res.bottom, color="#c0392b", lw=1.8, label="bottom growth")
+        ax2b = ax2.twinx()
+        ax2b.plot(weeks_ax, hct.hct, color="#000", lw=1.4, ls=":", label="Hct (%)")
+        ax2b.axhline(52, color="#000", lw=0.6, ls="--")
+        ax2b.set_ylabel("Hematocrit (%)")
+        ax2.set_ylabel("Outcome index (0-1)")
+        ax2.set_xlabel("Weeks on T")
+        lines1, labels1 = ax2.get_legend_handles_labels()
+        lines2, labels2 = ax2b.get_legend_handles_labels()
+        ax2.legend(lines1 + lines2, labels1 + labels2, fontsize=7, loc="upper left")
+        ax2.grid(alpha=0.3)
+        fig.suptitle(f"Masculinization — {a.name} {args.dose:g} mg every "
+                     f"{args.interval_days:g} d", fontsize=11)
+        out = Path(args.out)
+        out.mkdir(parents=True, exist_ok=True)
+        png = out / f"masc_{args.agent}_{int(args.dose)}mg_{int(args.interval_days)}d.png"
+        fig.savefig(png, dpi=130)
+        plt.close(fig)
+        print(f"\nWrote: {png}")
+    return 0
+
+
+def cmd_hct(args: argparse.Namespace) -> int:
+    """Erythrocytosis risk framing for a T regimen."""
+    a = get_androgen(args.agent)
+    print(hct_risk_report(a, args.dose, args.interval_days))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="hormone-sim",
@@ -748,6 +846,32 @@ def build_parser() -> argparse.ArgumentParser:
     ppr.add_argument("--title", default=None)
     ppr.add_argument("--out", help="write protocol markdown")
     ppr.set_defaults(func=cmd_protocol)
+
+    pan = sub.add_parser("androgens",
+                         help="list androgen agents or detail one")
+    pan.add_argument("--name", help="agent name; omit to list all")
+    pan.set_defaults(func=cmd_androgens)
+
+    pm = sub.add_parser("masc",
+                        help="simulate masculinization on a T regimen")
+    pm.add_argument("--agent", default="testosterone_cypionate",
+                    choices=sorted(ANDROGENS.keys()))
+    pm.add_argument("--dose", type=float, default=100.0, help="mg per dose")
+    pm.add_argument("--interval-days", type=float, default=7.0)
+    pm.add_argument("--weeks", type=float, default=104.0)
+    pm.add_argument("--n", type=int, default=0,
+                    help="add population bands with n samples (0 = off)")
+    pm.add_argument("--seed", type=int, default=42)
+    pm.add_argument("--out", help="output directory for the figure")
+    pm.set_defaults(func=cmd_masc)
+
+    ph = sub.add_parser("hct",
+                        help="erythrocytosis risk framing for a T regimen")
+    ph.add_argument("--agent", default="testosterone_cypionate",
+                    choices=sorted(ANDROGENS.keys()))
+    ph.add_argument("--dose", type=float, default=100.0)
+    ph.add_argument("--interval-days", type=float, default=7.0)
+    ph.set_defaults(func=cmd_hct)
 
     return p
 

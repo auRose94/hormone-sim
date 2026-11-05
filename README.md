@@ -105,13 +105,26 @@ hormone-sim protocol --agent metoclopramide --out docs/protocol-draft.md  # IRB 
 
 The example participant log lives in [`examples/`](examples/).
 
-## Next wave: trans-masculine / masculinization
+## Trans-masculine / masculinization domain (v0.8)
 
-Planned and scoped in [`docs/roadmap-trans-masc.md`](docs/roadmap-trans-masc.md):
-testosterone PK (esters' peak–trough story), masculinization PD outcomes
-(anchored on menstrual cessation), erythrocytosis risk framing, and
-generalizing the study layer. The architecture (PK registries, PD feedback,
-population bands, personalization) carries over directly.
+The mirror domain is now built: testosterone PK (`androgens.py` — injectable
+esters with the peak–trough story quantified, gel for stable levels; oral
+undecanoate deliberately unregistered), reversed-direction HPG suppression
+(ovarian output falls as T rises), masculinization outcomes
+(`masculinization.py` — cycle-cessation anchor ~5 months; voice/hair/body/bottom
+saturating clocks with genetics-dominant ceilings), and erythrocytosis risk
+framing (`erythrocytosis.py` — the case where the risk IS lab-monitorable,
+dose/route-dependent, and reversible: the mirror image of the TD asymmetry).
+
+```bash
+hormone-sim androgens
+hormone-sim masc --agent testosterone_cypionate --dose 100 --interval-days 7 \
+    --weeks 104 --n 150 --out outputs/   # outcomes + bands + figure
+hormone-sim hct --agent testosterone_cypionate --dose 100 --interval-days 7
+```
+
+Study-layer generalization (ingest/personalize on T logs) is the next open
+item — see [`docs/roadmap-trans-masc.md`](docs/roadmap-trans-masc.md).
 
 Programmatic use:
 
