@@ -50,6 +50,12 @@ from .galactagogues import (
     list_galactagogues,
 )
 from .lactation import LactationProtocol, simulate_lactation
+from .sensitivity import (
+    dose_sweep_population,
+    dose_sweep_table,
+    simulate_lactation_population,
+)
+from .risk_exposure import exposure_report
 
 
 def _safe_slug(name: str) -> str:
@@ -388,6 +394,51 @@ def cmd_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sweep(args: argparse.Namespace) -> int:
+    """Low-dose sweep with between-body heterogeneity quantified."""
+    rows = dose_sweep_population(
+        agent=args.agent,
+        doses=args.doses,
+        prep_weeks=args.prep_weeks,
+        progesterone_start_weeks=args.p_start_weeks,
+        pumping_sessions_per_day=args.sessions,
+        n=args.n,
+        seed=args.seed,
+        threshold_ml_day=args.threshold,
+    )
+    print(dose_sweep_table(rows, threshold_ml_day=args.threshold))
+    if args.out:
+        import csv
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with out.open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow(["agent", "dose_mg_day", "prolactin_ng_ml",
+                        "milk_p10", "milk_p50", "milk_p90",
+                        "frac_reaching_threshold"])
+            for r in rows:
+                w.writerow([r.agent, r.dose_mg_day,
+                            round(r.prolactin_ng_ml, 1),
+                            round(r.milk_p10, 1), round(r.milk_p50, 1),
+                            round(r.milk_p90, 1),
+                            round(r.frac_reaching_threshold, 4)])
+        print(f"\nWrote: {out}")
+    return 0
+
+
+def cmd_risk(args: argparse.Namespace) -> int:
+    """Structured risk-exposure framing for a planned galactagogue course."""
+    prof = exposure_report(
+        agent=args.agent,
+        dose_mg_day=args.dose,
+        weeks=args.weeks,
+        age=args.age,
+        concurrent_antipsychotics=args.antipsychotics,
+    )
+    print(prof.report())
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="hormone-sim",
@@ -485,6 +536,34 @@ def build_parser() -> argparse.ArgumentParser:
     pcm.add_argument("--sessions", type=float, default=8.0)
     pcm.add_argument("--out", help="write comparison CSV")
     pcm.set_defaults(func=cmd_compare)
+
+    psw = sub.add_parser("sweep",
+                         help="low-dose sweep; quantifies between-body heterogeneity")
+    psw.add_argument("--agent", default="metoclopramide",
+                     choices=sorted(GALACTAGOGUES.keys()))
+    psw.add_argument("--doses", nargs="+", type=float,
+                     default=[5, 10, 15, 20, 30, 45])
+    psw.add_argument("--prep-weeks", type=float, default=30.0)
+    psw.add_argument("--p-start-weeks", type=float, default=None)
+    psw.add_argument("--sessions", type=float, default=8.0)
+    psw.add_argument("--n", type=int, default=150, help="modeled bodies per dose")
+    psw.add_argument("--seed", type=int, default=42)
+    psw.add_argument("--threshold", type=float, default=100.0,
+                     help="'meaningful supply' threshold (mL/day)")
+    psw.add_argument("--out", help="write sweep CSV")
+    psw.set_defaults(func=cmd_sweep)
+
+    prk = sub.add_parser("risk",
+                         help="structured risk-exposure framing for a planned course")
+    prk.add_argument("--agent", default="metoclopramide",
+                     choices=sorted(GALACTAGOGUES.keys()))
+    prk.add_argument("--dose", type=float, default=10.0, help="mg/day")
+    prk.add_argument("--weeks", type=float, default=8.0, help="course length")
+    prk.add_argument("--age", type=int, default=30,
+                     help="age (strongest known TD risk modifier)")
+    prk.add_argument("--antipsychotics", action="store_true",
+                     help="flag concurrent dopamine-antagonist use")
+    prk.set_defaults(func=cmd_risk)
 
     return p
 

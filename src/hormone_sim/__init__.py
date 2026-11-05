@@ -62,9 +62,13 @@ from .sensitivity import (
     SensitivitySpec,
     LactationPopulationResult,
     simulate_lactation_population,
+    DoseSweepRow,
+    dose_sweep_population,
+    dose_sweep_table,
 )
+from .risk_exposure import exposure_report, ExposureProfile
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "simulate",
@@ -117,5 +121,10 @@ __all__ = [
     "SensitivitySpec",
     "LactationPopulationResult",
     "simulate_lactation_population",
+    "DoseSweepRow",
+    "dose_sweep_population",
+    "dose_sweep_table",
+    "exposure_report",
+    "ExposureProfile",
     "__version__",
 ]

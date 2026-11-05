@@ -43,12 +43,22 @@ from .lactation import (
 
 @dataclass(frozen=True)
 class SensitivitySpec:
-    """Which parameters vary, and by how much (lognormal CV)."""
+    """Which parameters vary, and by how much (lognormal CV).
+
+    ``maturation_prolactin_threshold_ng_ml`` is included because it is the
+    parameter that governs whether a LOW galactagogue dose works at all: the
+    gland starts maturing only above a prolactin threshold, and where that
+    threshold sits between individuals is unknown. Without sampling it, the
+    low-dose regime shows a fake sharp cliff (everyone matures above exactly
+    40 ng/mL, nobody below); with it, low doses show what is actually claimed:
+    a heterogeneous zone where some modeled bodies respond and others don't.
+    """
 
     cvs: Dict[str, float] = field(default_factory=lambda: {
         "milk_vmax_ml_day": 0.25,
         "milk_km_prolactin_ng_ml": 0.30,
         "maturation_tau_weeks": 0.60,
+        "maturation_prolactin_threshold_ng_ml": 0.40,
         "ductal_tau_weeks": 0.35,
         "la_tau_weeks": 0.35,
         "involution_rate_per_week": 0.50,
@@ -179,3 +189,112 @@ def simulate_lactation_population(
         weeks=weeks,
         milk=np.vstack(stack),
     )
+
+
+# --- Low-dose sweep: "useful for which bodies?" ------------------------------
+@dataclass
+class DoseSweepRow:
+    """One dose's outcome, with between-body heterogeneity made explicit."""
+
+    agent: str
+    dose_mg_day: float
+    prolactin_ng_ml: float
+    milk_p10: float
+    milk_p50: float
+    milk_p90: float
+    frac_reaching_threshold: float   # fraction of sampled bodies >= threshold
+
+    def report(self) -> str:
+        return (
+            f"{self.dose_mg_day:>6.1f} mg/d | PRL {self.prolactin_ng_ml:>5.0f} | "
+            f"milk p10 {self.milk_p10:>5.0f} / p50 {self.milk_p50:>5.0f} / "
+            f"p90 {self.milk_p90:>5.0f} mL/d | "
+            f"{self.frac_reaching_threshold*100:>5.1f}% of modeled bodies "
+            f"reach the threshold"
+        )
+
+
+def dose_sweep_population(
+    agent: str,
+    doses: List[float],
+    prep_weeks: float = 30.0,
+    progesterone_start_weeks: Optional[float] = None,
+    pumping_sessions_per_day: float = 8.0,
+    n: int = 150,
+    seed: int = 42,
+    threshold_ml_day: float = 100.0,
+    spec: Optional[SensitivitySpec] = None,
+) -> List[DoseSweepRow]:
+    """Sweep galactagogue doses and quantify between-body heterogeneity.
+
+    For each dose: run the population simulation and report the milk-supply
+    envelope plus **what fraction of modeled bodies reach a meaningful
+    supply**. This is the quantified version of the heterogeneity question:
+    at low doses the answer is not yes/no but *which fraction*, driven by the
+    (unknown, sampled) spread in prolactin sensitivity and maturation
+    threshold. Uses the SAME seed for every dose so rows are paired — the
+    same "bodies" are evaluated at each dose.
+    """
+    from .galactagogues import get_galactagogue, prolactin_response
+
+    g = get_galactagogue(agent)
+    spec = spec or SensitivitySpec()
+    rows: List[DoseSweepRow] = []
+
+    for dose in doses:
+        protocol = LactationProtocol(
+            galactagogue=agent,
+            galactagogue_dose_mg_day=float(dose),
+            prep_weeks=prep_weeks,
+            progesterone_start_weeks=progesterone_start_weeks,
+            pumping_sessions_per_day=pumping_sessions_per_day,
+        )
+        # Same seed per dose -> paired samples across doses.
+        pop = simulate_lactation_population(
+            protocol, n=n, seed=seed, spec=spec,
+        )
+        p10, p50, p90 = pop.steady_state()
+        tail_dt = pop.weeks[1] - pop.weeks[0]
+        n_tail = max(1, int(round(8.0 / tail_dt)))
+        tail = pop.milk[:, -n_tail:].mean(axis=1)
+        frac = float(np.mean(tail >= threshold_ml_day))
+        rows.append(DoseSweepRow(
+            agent=g.name,
+            dose_mg_day=float(dose),
+            prolactin_ng_ml=prolactin_response(g, dose),
+            milk_p10=p10, milk_p50=p50, milk_p90=p90,
+            frac_reaching_threshold=frac,
+        ))
+    return rows
+
+
+def dose_sweep_table(rows: List[DoseSweepRow],
+                     threshold_ml_day: float = 100.0) -> str:
+    """Human-readable low-dose sweep table."""
+    agent = rows[0].agent if rows else "?"
+    lines = [
+        f"Low-dose sweep — {agent} (paired samples; n per dose = "
+        f"same bodies at each dose):",
+        f"{'dose':>10} | {'PRL ng/mL':>9} | {'milk p10/p50/p90 mL/d':>24} | "
+        f"{'% bodies >=' + f'{threshold_ml_day:.0f}':>16}",
+        "-" * 70,
+    ]
+    for r in rows:
+        lines.append(r.report())
+    lines.append("")
+    lines.append(
+        "  Reading this: the p50 column is the 'average body'; the p10-p90"
+    )
+    lines.append(
+        "  spread and the % column are the heterogeneity question. Low doses"
+    )
+    lines.append(
+        "  live in the marginal zone — useful for some modeled physiologies,"
+    )
+    lines.append(
+        "  not others, which is why titration-to-effect (not fixed dosing)"
+    )
+    lines.append(
+        "  is the rational protocol."
+    )
+    return "\n".join(lines)
