@@ -61,6 +61,12 @@ from .ingest import load_observations, personalize_from_csv, plot_personal
 from .aims import AIMSRecord, parse_visit
 from .protocol import ProtocolConfig, generate_protocol
 from .androgens import ANDROGENS, get_androgen, simulate_androgen
+from .intersex import PACKS as INTERSEX_PACKS, get_pack, pack_summary
+from .personalization_androgen import (
+    load_androgen_observations,
+    personalize_androgen,
+    posterior_predictive_androgen,
+)
 from .masculinization import simulate_masculinization, simulate_masc_population
 from .erythrocytosis import hct_risk_report
 from .lactation import LactationProtocol as _LP
@@ -600,8 +606,16 @@ def cmd_androgens(args: argparse.Namespace) -> int:
 def cmd_masc(args: argparse.Namespace) -> int:
     """Simulate masculinization outcomes on a T regimen."""
     a = get_androgen(args.agent)
-    res = simulate_masculinization(a, args.dose, args.interval_days,
-                                   weeks=args.weeks)
+    pack = get_pack(args.pack) if getattr(args, "pack", None) else None
+    res = simulate_masculinization(
+        a, args.dose, args.interval_days, weeks=args.weeks,
+        baseline_t_ngdl=(pack.baseline_t_ngdl if pack else None),
+        baseline_e2_pgml=(pack.baseline_e2_pgml if pack else None))
+    if pack:
+        print(f"[intersex pack applied: {pack.name} — anchor "
+              f"{pack.anchor_quality}]")
+        if pack.limits:
+            print(f"[limits: {pack.limits}]")
     print(res.report())
     print()
     if args.n:
@@ -660,6 +674,37 @@ def cmd_hct(args: argparse.Namespace) -> int:
     """Erythrocytosis risk framing for a T regimen."""
     a = get_androgen(args.agent)
     print(hct_risk_report(a, args.dose, args.interval_days))
+    return 0
+
+
+def cmd_intersex(args: argparse.Namespace) -> int:
+    """Intersex condition packs: list, or detail one (with its limits)."""
+    if args.name:
+        print(get_pack(args.name).describe())
+        return 0
+    print(pack_summary())
+    return 0
+
+
+def cmd_ingest_t(args: argparse.Namespace) -> int:
+    """Personal inference from a trans-masculine participant's T log."""
+    pack = get_pack(args.pack) if args.pack else None
+    obs, skipped = load_androgen_observations(
+        args.csv, default_interval_days=args.interval_days)
+    print(f"Ingested {len(obs)} observation(s) from {args.csv} "
+          f"({skipped} skipped)")
+    for o in obs:
+        print(f"  - {o.describe()}")
+    result = personalize_androgen(
+        args.agent, obs, n=args.n, seed=args.seed,
+        baseline_t_ngdl=(pack.baseline_t_ngdl if pack else None),
+        baseline_e2_pgml=(pack.baseline_e2_pgml if pack else None))
+    print()
+    print(result.report())
+    print()
+    candidates = list(zip(args.doses, [args.interval_days] * len(args.doses)))
+    print(posterior_predictive_androgen(result, args.agent, candidates,
+                                        weeks=args.pred_weeks))
     return 0
 
 
@@ -862,6 +907,8 @@ def build_parser() -> argparse.ArgumentParser:
     pm.add_argument("--n", type=int, default=0,
                     help="add population bands with n samples (0 = off)")
     pm.add_argument("--seed", type=int, default=42)
+    pm.add_argument("--pack", choices=sorted(INTERSEX_PACKS.keys()),
+                    help="apply an intersex condition pack's baselines")
     pm.add_argument("--out", help="output directory for the figure")
     pm.set_defaults(func=cmd_masc)
 
@@ -872,6 +919,29 @@ def build_parser() -> argparse.ArgumentParser:
     ph.add_argument("--dose", type=float, default=100.0)
     ph.add_argument("--interval-days", type=float, default=7.0)
     ph.set_defaults(func=cmd_hct)
+
+    pix = sub.add_parser("intersex",
+                         help="intersex condition packs (list or detail)")
+    pix.add_argument("--name", help="pack key (e.g. cah_21ohd); omit to list")
+    pix.set_defaults(func=cmd_intersex)
+
+    pit = sub.add_parser("ingest-t",
+                         help="personal inference from a trans-masculine T log")
+    pit.add_argument("--csv", required=True)
+    pit.add_argument("--agent", default="testosterone_cypionate",
+                     choices=sorted(ANDROGENS.keys()))
+    pit.add_argument("--interval-days", type=float, default=7.0,
+                     help="default interval if the CSV has none")
+    pit.add_argument("--pack", choices=sorted(INTERSEX_PACKS.keys()),
+                     help="apply an intersex condition pack's baselines")
+    pit.add_argument("--n", type=int, default=200)
+    pit.add_argument("--seed", type=int, default=7)
+    pit.add_argument("--doses", nargs="+", type=float, default=[100, 150],
+                     help="candidate doses for the predictive table")
+    pit.add_argument("--interval-days-pred", type=float, default=7.0,
+                     dest="interval_days")
+    pit.add_argument("--pred-weeks", type=float, default=12.0)
+    pit.set_defaults(func=cmd_ingest_t)
 
     return p
 

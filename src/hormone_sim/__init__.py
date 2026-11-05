@@ -116,8 +116,21 @@ from .erythrocytosis import (
     simulate_hct,
     hct_risk_report,
 )
+from .intersex import (
+    PACKS as INTERSEX_PACKS,
+    ConditionPack,
+    get_pack,
+    pack_summary,
+)
+from .personalization_androgen import (
+    AndrogenObservation,
+    AndrogenPersonalizedResult,
+    personalize_androgen,
+    posterior_predictive_androgen,
+    load_androgen_observations,
+)
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 __all__ = [
     "simulate",
@@ -211,5 +224,14 @@ __all__ = [
     "HctResult",
     "simulate_hct",
     "hct_risk_report",
+    "INTERSEX_PACKS",
+    "ConditionPack",
+    "get_pack",
+    "pack_summary",
+    "AndrogenObservation",
+    "AndrogenPersonalizedResult",
+    "personalize_androgen",
+    "posterior_predictive_androgen",
+    "load_androgen_observations",
     "__version__",
 ]

@@ -126,6 +126,31 @@ hormone-sim hct --agent testosterone_cypionate --dose 100 --interval-days 7
 Study-layer generalization (ingest/personalize on T logs) is the next open
 item — see [`docs/roadmap-trans-masc.md`](docs/roadmap-trans-masc.md).
 
+## Intersex condition packs (v0.9)
+
+Parameter overlays that adapt the models to documented intersex endocrinology:
+CAIS, PAIS (framework-only — individual receptor sensitivity is not
+predictable from population data and the pack says so), CAH (21-hydroxylase),
+Klinefelter, and Turner. Each pack changes the endogenous baselines, carries
+citations and an anchor-quality rating, and states its limits in plain
+language. The module docstring names why this exists: intersex people —
+including intersex trans people — have historically been denied both bodily
+autonomy (non-consensual normalization procedures) and information about
+their own endocrinology. Legibility is the point.
+
+```bash
+hormone-sim intersex --name cah_21ohd           # a pack, with its limits
+hormone-sim masc --pack cah_21ohd --dose 100 --interval-days 7
+hormone-sim ingest-t --csv examples/t_log.csv --pack cah_21ohd
+```
+
+The T-log study layer now mirrors the lactation one: `ingest-t` reads a
+trans-masculine log (serum T + CBCs, mixed date/weeks axes, fail-closed
+validation) and runs importance-sampling personalization with a posterior
+predictive over candidate (dose, interval) regimens — trough/mean/peak plus
+Hct plateau, because for T the schedule changes the *swing*, not just the
+level. See [`examples/t_log.csv`](examples/t_log.csv).
+
 Programmatic use:
 
 ```python

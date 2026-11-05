@@ -124,11 +124,18 @@ def simulate_masculinization(
     model: Optional[MasculinizationModel] = None,
     body_weight_kg: float = 70.0,
     e2_ec50_ngdl: float = 170.0,
+    baseline_t_ngdl: Optional[float] = None,
+    baseline_e2_pgml: Optional[float] = None,
 ) -> MascResult:
-    """Run the T PK and integrate the masculinization outcomes on it."""
+    """Run the T PK and integrate the masculinization outcomes on it.
+
+    Baseline overrides support the intersex packs (e.g. CAH's adrenal-driven
+    endogenous T, Turner's near-zero gonadal output)."""
     model = model or MasculinizationModel()
     pk = simulate_androgen(androgen, dose_mg, interval_days, weeks,
-                           body_weight_kg=body_weight_kg, e2_ec50_ngdl=e2_ec50_ngdl)
+                           body_weight_kg=body_weight_kg, e2_ec50_ngdl=e2_ec50_ngdl,
+                           baseline_t_ngdl=baseline_t_ngdl,
+                           baseline_e2_pgml=baseline_e2_pgml)
 
     hours = pk["hours"]
     # Weekly-grid resample of the PK curves (dt_weeks).

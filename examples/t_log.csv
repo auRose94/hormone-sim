@@ -1,0 +1,5 @@
+date,start_date,weeks_on_t,dose_mg,interval_days,testosterone_ngdl,hct_pct,notes
+2026-08-07,2026-08-07,,100,7,410,41.2,first draw
+,2026-08-07,6,100,7,880,44.0,
+,2026-08-07,12,100,7,920,45.8,steady
+,2026-08-07,18,100,7,,47.0,cbc only

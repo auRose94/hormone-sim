@@ -83,10 +83,12 @@ def simulate(
     pk: Optional[EstradiolPK] = None,
     pd: Optional[AndrogenPD] = None,
     dt_hours: float = 0.5,
+    baseline_e2_pgml: Optional[float] = None,
 ) -> SimResult:
     """Run a single population-typical simulation.
 
-    ``weeks`` is the simulation horizon. Returns a :class:`SimResult`.
+    ``weeks`` is the simulation horizon. ``baseline_e2_pgml`` overrides the
+    endogenous baseline (intersex packs). Returns a :class:`SimResult`.
     """
     pk = pk or EstradiolPK()
     pd = pd or AndrogenPD()
@@ -103,7 +105,8 @@ def simulate(
         injection_interval_hours=spec.injection_interval_hours,
     )
 
-    e2 = simulate_pk(schedule, pk, hours, dt_hours=dt_hours, route=route)
+    e2 = simulate_pk(schedule, pk, hours, dt_hours=dt_hours, route=route,
+                     baseline_e2_pgml=baseline_e2_pgml)
     t = suppress_testosterone(e2, pd, window_hours=72.0, dt_hours=dt_hours,
                               agents=regimen.anti_androgen)
 

@@ -180,6 +180,8 @@ def simulate_androgen(
     e2_ec50_ngdl: float = 170.0,
     e2_hill_n: float = 2.0,
     body_weight_kg: float = 70.0,
+    baseline_t_ngdl: Optional[float] = None,
+    baseline_e2_pgml: Optional[float] = None,
 ) -> Dict[str, np.ndarray]:
     """Simulate serum testosterone (ng/dL) under repeated dosing.
 
@@ -189,14 +191,21 @@ def simulate_androgen(
     this is the reversed-direction mirror of the trans-feminine model, and
     it is why T monotherapy stops cycles.
 
+    ``baseline_t_ngdl`` / ``baseline_e2_pgml`` override the population
+    endogenous baselines — used by the intersex condition packs
+    (:mod:`hormone_sim.intersex`) to match a documented endocrine picture
+    (e.g. CAH's adrenal-driven T, Klinefelter's low baseline).
+
     Returns dict with keys: ``hours``, ``t_ngdl``, ``e2_pgml``,
     ``ovarian_frac`` (0-1 surviving ovarian contribution).
     """
+    base_t = BASELINE_T_NGDL if baseline_t_ngdl is None else float(baseline_t_ngdl)
+    base_e2 = BASELINE_E2_PGML if baseline_e2_pgml is None else float(baseline_e2_pgml)
     cl = a.clearance_l_per_h(body_weight_kg)
     vd_ugl = a.vd_l_kg * body_weight_kg            # Vd in L; C(µg/L) = A(µg)/Vd
 
-    # Ovarian production calibrated so zero-dose -> baseline T.
-    base_c_ugl = ngdl_to_ugl(BASELINE_T_NGDL)
+    # Endogenous production calibrated so zero-dose -> baseline T.
+    base_c_ugl = ngdl_to_ugl(base_t)
     p_ova_base = cl * base_c_ugl                    # µg/h
 
     n = int(round(weeks * 7 * 24 / dt_hours)) + 1
@@ -220,9 +229,15 @@ def simulate_androgen(
         gel_flux = dose_mg * 1e3 * a.bioavailability / 24.0  # µg/h
 
     # Suppression uses a trailing mean of T (days-scale, like the E2 model).
+    # Normalized against the body's OWN baseline suppression (s_base), so the
+    # invariant "zero exogenous dose -> baseline T" holds for ANY endocrine
+    # baseline (population, CAH adrenal, Klinefelter low-male, ...): at
+    # C = baseline, endogenous production exactly balances elimination.
     suppress_window_h = 72.0
     win = max(1, int(round(suppress_window_h / dt_hours)))
     ec50_ugl = ngdl_to_ugl(e2_ec50_ngdl)
+    s_base = (base_c_ugl ** e2_hill_n
+              / (ec50_ugl ** e2_hill_n + base_c_ugl ** e2_hill_n))
 
     ovarian_frac = np.empty(n)
     for i in range(1, n):
@@ -232,8 +247,10 @@ def simulate_androgen(
         c_avg = A[lo:i].mean() / vd_ugl
         denom = ec50_ugl ** e2_hill_n + c_avg ** e2_hill_n
         s = (c_avg ** e2_hill_n / denom) if denom > 0 else 0.0
-        p_ova = p_ova_base * (1.0 - s)
-        ovarian_frac[i] = 1.0 - s
+        surviving = (1.0 - s) / (1.0 - s_base) if s_base < 1.0 else 0.0
+        surviving = max(0.0, min(1.0, surviving))
+        p_ova = p_ova_base * surviving
+        ovarian_frac[i] = surviving
 
         elim = cl * c_ugl * dt_hours
         depot_release = k_dep * D[i - 1] * dt_hours
@@ -250,7 +267,7 @@ def simulate_androgen(
     t_ngdl = ugl_to_ngdl(A / vd_ugl)
     # Estradiol: ovarian E2 falls with the same suppression; aromatization
     # from the (suppressed) total T adds ~0.05 pg/mL per ng/dL.
-    e2 = BASELINE_E2_PGML * ovarian_frac + 0.05 * t_ngdl
+    e2 = base_e2 * ovarian_frac + 0.05 * t_ngdl
 
     return {
         "hours": hours,

@@ -122,12 +122,17 @@ def simulate_pk(
     period_hours: float,
     dt_hours: float = 0.1,
     route: str = "transdermal",
+    baseline_e2_pgml: Optional[float] = None,
 ) -> np.ndarray:
     """Integrate the estradiol PK model; return concentration (pg/mL) over time.
 
     Explicit Euler on a fine grid (``dt_hours``, default 0.1 h). The grid is
     fine enough that Euler error is negligible versus the model's inherent
     simplification. Starts at baseline estradiol.
+
+    ``baseline_e2_pgml`` overrides the population endogenous baseline
+    (intersex packs: e.g. Turner or post-gonadectomy CAIS sit near-adrenal
+    levels with no gonadal production).
     """
     n = int(round(period_hours / dt_hours)) + 1
     A = np.empty(n)   # body mass (µg)
@@ -141,7 +146,7 @@ def simulate_pk(
     cl = pk.effective_clearance(route)
 
     # Endogenous production rate calibrated so zero input -> baseline steady state.
-    baseline_C = BASELINE_E2_PGML
+    baseline_C = BASELINE_E2_PGML if baseline_e2_pgml is None else float(baseline_e2_pgml)
     production = cl * baseline_C  # µg/h (balances clearance at baseline C)
 
     # Dose->level calibration: scale the delivered dose (already delivery_factor-
