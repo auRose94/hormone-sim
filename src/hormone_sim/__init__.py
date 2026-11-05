@@ -16,8 +16,27 @@ from .params import (
     e2_pgml_to_pmol,
     t_ngdl_to_nmol,
 )
+from .compounds import (
+    Compound,
+    PHYTOESTROGENS,
+    get_compound,
+    hypothetical,
+    MW_ESTRADIOL,
+)
+from .estrogenic_activity import (
+    ee_of,
+    required_daily_rate_ug_day,
+    design_summary,
+    TargetProfile,
+    EstrogenicResult,
+)
+from .breast_development import (
+    BreastModel,
+    BreastResult,
+    simulate_breast_development,
+)
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "simulate",
@@ -33,5 +52,20 @@ __all__ = [
     "TARGET_T_NGDL",
     "e2_pgml_to_pmol",
     "t_ngdl_to_nmol",
+    # estrogenic activity / compounds
+    "Compound",
+    "PHYTOESTROGENS",
+    "get_compound",
+    "hypothetical",
+    "MW_ESTRADIOL",
+    "ee_of",
+    "required_daily_rate_ug_day",
+    "design_summary",
+    "TargetProfile",
+    "EstrogenicResult",
+    # breast development
+    "BreastModel",
+    "BreastResult",
+    "simulate_breast_development",
     "__version__",
 ]

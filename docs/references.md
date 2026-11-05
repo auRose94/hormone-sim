@@ -43,6 +43,37 @@ All model parameters are either **cited** (traceable to a published source) or
   parameters in transgender individuals." *J Clin Endocrinol Metab.* — Anti-androgen
   effect magnitudes.
 
+## Phytoestrogens & estrogenic compounds (relative estrogenic activity)
+
+- **Bovee, T.F. et al. (2004).** "Identification and quantification of phytoestrogens
+  in soybean and soy products." *J Agric Food Chem* 52(12):3934–3942. — REA values
+  for genistein, daidzein, glycitein, coumestrol, formononetin, biochanin A.
+- **Muanprasat, C. & Chatsudthipong, V. (2009).** "Phytoestrogens as an alternative
+  estrogen replacement therapy." *Pharmacol Ther* 122(2):136–150. — ERα/ERβ
+  selectivity, relative potency, free-fraction considerations.
+- **Delclos, K.D. et al. (2001).** "Effects of geniprotein/genistein on the
+  reproductive system." — Isoflavone ER affinity and potency vs estradiol.
+- **Fisher, C.R. et al. (1998).** "Comparative effects of isoflavones on ER binding."
+  *Endocrinology* 139(10):4252–4263. — REA ~1e-3 to 1e-4 for genistein; the
+  assay-dependence (1e-4..3e-3) is real and reproduced in the model.
+
+> **REA is assay-dependent.** Different cell lines, reporters, ERα vs ERβ, and
+> free-fraction assumptions move these numbers by orders of magnitude. The
+> registry stores representative central estimates with the documented range in
+> each compound's `note`. Treat estradiol-equivalents as **order-of-magnitude**.
+
+## Breast development
+
+- **WPATH (2022).** *Standards of Care, Version 8.* — Breast development on GAHT
+  reaches Tanner 2–4 over 1–3 years; genetics dominate the ceiling.
+- **Grimley et al. (2017).** Endocrine Society CPG. — Breast growth timeline.
+- **Kuhl, H. (2005).** — Estrogen effects on breast tissue.
+
+The breast model is a **cumulative-EE-driven saturating-growth** model. It is
+calibrated to the population-typical Tanner trajectory and explicitly does NOT
+claim individual prediction — breast size is dominated by genetics, age-at-start,
+and adiposity, none of which this simple model captures.
+
 ## Units
 
 - Estradiol: 1 pg/mL = 3.671 pmol/L.

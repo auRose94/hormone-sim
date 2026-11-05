@@ -27,6 +27,9 @@ of pre‑clinical modeling that precedes and informs properly supervised clinica
 | **PD — testosterone** | Suppression of the hypothalamic‑pituitary‑gonadal (HPG) axis by estradiol negative feedback, plus additive anti‑androgen effects (spironolactone, cyproterone acetate, GnRH agonists, bicalutamide). |
 | **Targets** | Endocrine Society / WPATH ranges: E2 ≈ 100–200 pg/mL; T < 50 ng/dL (female range). |
 | **Population variability** | Monte‑Carlo sampling of clearance, volume, and sensitivity to produce confidence bands, not single lines. |
+| **Estrogenic activity** | A registry of real phytoestrogens (genistein, coumestrol, …) plus a constructor for *hypothetical* molecules, each characterized by relative estrogenic activity (REA) vs estradiol. Folds any compound's plasma curve into **estradiol‑equivalents (EE)** so breast‑growth creams, soy supplements, and estradiol sit on one scale. |
+| **Inverse design** | Given a target EE (e.g. the 100–200 pg/mL window), what dose does a candidate/hypothetical molecule need? "Care yet to be discovered" explored as a property space. |
+| **Breast development** | Cumulative‑EE‑driven saturating‑growth model mapped to Tanner stages (population‑typical; genetics dominate the ceiling). |
 
 The model is deliberately **simplified and transparent**: every parameter is a named,
 citable constant (see [`docs/references.md`](docs/references.md)), and the few that are
@@ -53,19 +56,42 @@ hormone-sim run --regimen configs/tf_transdermal.yaml --weeks 12 --out outputs/
 hormone-sim scan --route transdermal --doses 25 50 75 100 --weeks 16 --out outputs/
 
 # Population bands: 200 subjects, transdermal 50 µg/day
-hormone-sim pop --regimen configs/tf_transdermal.yaml --n 200 --weeks 12 --out outputs/
+hormone-sim pop --route transdermal --dose 50 --n 200 --weeks 12 --out outputs/
+
+# Estrogenic activity: how estrogenic is genistein? EE at 500 pg/mL plasma?
+hormone-sim compound
+hormone-sim compound --name genistein --plasma-pgml 500
+
+# Inverse design: what dose does a hypothetical molecule (REA=0.5) need?
+hormone-sim hypothetical --name future-drug --rea 0.5 --target-ee 150
+
+# Breast development: Tanner stage over 2 years on transdermal 50 µg/day
+hormone-sim breast --regimen configs/tf_transdermal.yaml --weeks 104
 ```
 
 Programmatic use:
 
 ```python
 from hormone_sim import Regimen, simulate
-import pandas as pd
+from hormone_sim.plot import plot_single
 
 r = Regimen.from_yaml("configs/tf_transdermal.yaml")
 sim = simulate(r, weeks=12)          # returns a SimResult
-sim.plot()                            # E2 + T vs time, with target bands
-print(sim.steady_state_e2_pg_ml())
+plot_single(sim, out_path="outputs/demo.png")   # E2 + T vs time, with target bands
+print(sim.steady_state_e2_pgml())
+```
+
+Estrogenic-activity example:
+
+```python
+from hormone_sim import get_compound, ee_of
+import numpy as np
+
+gen = get_compound("genistein")
+# EE at a plasma concentration of 500 pg/mL:
+ee = ee_of(gen, np.array([500.0])).ee_curve_pgml[0]
+print(f"genistein at 500 pg/mL -> {ee:.3f} pg/mL estradiol-equivalent")
+```
 ```
 
 ## Project layout

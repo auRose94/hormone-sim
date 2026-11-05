@@ -29,6 +29,19 @@ from .params import (
     TARGET_E2_PGML,
     TARGET_T_NGDL,
 )
+from .compounds import (
+    PHYTOESTROGENS,
+    get_compound,
+    hypothetical,
+    MW_ESTRADIOL,
+)
+from .estrogenic_activity import (
+    ee_of,
+    required_daily_rate_ug_day,
+    design_summary,
+    TargetProfile,
+)
+from .breast_development import simulate_breast_development
 
 
 def _safe_slug(name: str) -> str:
@@ -143,6 +156,70 @@ def cmd_pop(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_compound(args: argparse.Namespace) -> int:
+    """List known compounds, or report one compound's potency + EE at a dose."""
+    if args.name:
+        c = get_compound(args.name)
+        print(f"Compound: {c.name}")
+        print(f"  REA (vs E2=1):        {c.rea:.3g}")
+        print(f"  MW:                   {c.mw:g} g/mol")
+        print(f"  free fraction:        {c.free_fraction:g}")
+        print(f"  potency (per pg/mL):  {c.potency:.3g}")
+        print(f"  calibrated:           {c.calibrated}")
+        print(f"  note:                 {c.note}")
+        print(f"  source:               {c.citation}")
+        # What EE does a given plasma level produce?
+        if args.plasma_pgml is not None:
+            res = ee_of(c, np.array([args.plasma_pgml]))
+            print(f"\n  At {args.plasma_pgml:g} pg/mL plasma -> EE {res.steady_state_ee_pgml():.4g} pg/mL")
+        return 0
+
+    print("Known estrogenic compounds (REA = relative estrogenic activity vs estradiol):")
+    print(f"{'name':>14} | {'REA':>9} | {'MW':>8} | {'potency/pg':>11}")
+    print("-" * 52)
+    for name in sorted(PHYTOESTROGENS):
+        c = PHYTOESTROGENS[name]
+        print(f"{name:>14} | {c.rea:>9.1e} | {c.mw:>8.1f} | {c.potency:>11.2e}")
+    print("\nTip: 'hormone-sim compound <name>' for details; use --hypothetical to")
+    print("explore a hypothetical molecule. See docs/references.md for provenance.")
+    return 0
+
+
+def cmd_hypothetical(args: argparse.Namespace) -> int:
+    """Inverse design for a hypothetical molecule (care yet to be discovered)."""
+    c = hypothetical(
+        name=args.name,
+        rea=args.rea,
+        mw=args.mw,
+        free_fraction=args.free_fraction,
+        note="hypothetical (user-specified target product profile)",
+    )
+    target = TargetProfile(ee_target_pgml=args.target_ee)
+    print(design_summary(c, target, routes=["transdermal", "oral", "im_injection"]))
+    print(f"\n  (REA={c.rea:.3g}, MW={c.mw:g}, potency={c.potency:.3g}; "
+          "linear-PK property-space estimate, not a discovered drug.)")
+    return 0
+
+
+def cmd_breast(args: argparse.Namespace) -> int:
+    """Simulate population-typical breast development from an EE exposure."""
+    # Build an EE curve. If a regimen is given, use its E2 as EE; otherwise a
+    # flat EE at the target level.
+    if args.regimen:
+        r = Regimen.from_yaml(args.regimen)
+        sim = simulate(r, weeks=args.weeks)
+        ee_curve = sim.e2_pgml
+        label = r.name
+    else:
+        # flat EE exposure (steady state) for a target level.
+        ee_curve = np.full(int(args.weeks / 0.25) + 1, args.flat_ee)
+        label = f"flat EE {args.flat_ee:g} pg/mL"
+    res = simulate_breast_development(ee_curve, weeks=args.weeks)
+    print(f"Breast development: {label}, {args.weeks:g} weeks")
+    print(res.report())
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="hormone-sim",
@@ -174,6 +251,31 @@ def build_parser() -> argparse.ArgumentParser:
     pp.add_argument("--seed", type=int, default=42)
     pp.add_argument("--out", help="output directory for PNG")
     pp.set_defaults(func=cmd_pop)
+
+    pc = sub.add_parser("compound", help="list compounds or report one's potency/EE")
+    pc.add_argument("--name", help="compound name (e.g. genistein); omit to list all")
+    pc.add_argument("--plasma-pgml", type=float,
+                    help="plasma concentration to compute EE at (for --name)")
+    pc.set_defaults(func=cmd_compound)
+
+    ph = sub.add_parser("hypothetical", help="inverse-design a hypothetical molecule")
+    ph.add_argument("--name", required=True, help="label for the hypothetical compound")
+    ph.add_argument("--rea", type=float, required=True,
+                    help="relative estrogenic activity vs estradiol (=1)")
+    ph.add_argument("--mw", type=float, default=MW_ESTRADIOL,
+                    help="molecular weight (g/mol), default = estradiol")
+    ph.add_argument("--free-fraction", type=float, default=0.02,
+                    help="plasma free fraction, default = estradiol (0.02)")
+    ph.add_argument("--target-ee", type=float, default=150.0,
+                    help="target estradiol-equivalent (pg/mL)")
+    ph.set_defaults(func=cmd_hypothetical)
+
+    pb = sub.add_parser("breast", help="simulate population-typical breast development")
+    pb.add_argument("--regimen", help="regimen YAML; use its E2 as the EE exposure")
+    pb.add_argument("--flat-ee", type=float, default=150.0,
+                    help="flat EE exposure (pg/mL) if no --regimen given")
+    pb.add_argument("--weeks", type=float, default=104.0, help="horizon (default 2 yr)")
+    pb.set_defaults(func=cmd_breast)
 
     return p
 
