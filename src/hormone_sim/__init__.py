@@ -67,8 +67,20 @@ from .sensitivity import (
     dose_sweep_table,
 )
 from .risk_exposure import exposure_report, ExposureProfile
+from .progestogens import (
+    PROGESTOGENS,
+    Progestogen,
+    get_progestogen,
+    custom_progestogen,
+)
+from .personalization import (
+    Observation,
+    PersonalizedResult,
+    personalize,
+    posterior_predictive,
+)
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "simulate",
@@ -126,5 +138,13 @@ __all__ = [
     "dose_sweep_table",
     "exposure_report",
     "ExposureProfile",
+    "PROGESTOGENS",
+    "Progestogen",
+    "get_progestogen",
+    "custom_progestogen",
+    "Observation",
+    "PersonalizedResult",
+    "personalize",
+    "posterior_predictive",
     "__version__",
 ]

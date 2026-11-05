@@ -30,7 +30,7 @@ of pre‑clinical modeling that precedes and informs properly supervised clinica
 | **Estrogenic activity** | A registry of real phytoestrogens (genistein, coumestrol, …) plus a constructor for *hypothetical* molecules, each characterized by relative estrogenic activity (REA) vs estradiol. Folds any compound's plasma curve into **estradiol‑equivalents (EE)** so breast‑growth creams, soy supplements, and estradiol sit on one scale. |
 | **Inverse design** | Given a target EE (e.g. the 100–200 pg/mL window), what dose does a candidate/hypothetical molecule need? "Care yet to be discovered" explored as a property space. |
 | **Breast development** | Cumulative‑EE‑driven saturating‑growth model mapped to Tanner stages (population‑typical; genetics dominate the ceiling). |
-| **Galactagogues & lactation** | D2‑antagonist registry (metoclopramide, domperidone, sulpiride, amisulpride) with PK + prolactin Emax/ED50 dose‑response; Newman–Goldfarb induction protocol with **two‑compartment priming** (E2‑driven ductal scaffold + progesterone‑driven lobuloalveolar units, gated by ducts) → milk‑production timeline. Equieffective head‑to‑head `compare` mode; Monte‑Carlo sensitivity bands on the milk parameters. **No controlled trials in trans women** — calibrated from postpartum cis literature, large uncertainty flagged. |
+| **Galactagogues & lactation** | D2‑antagonist registry (metoclopramide, domperidone, sulpiride, amisulpride) with PK + prolactin Emax/ED50; Newman–Goldfarb protocol with **two‑compartment priming** (E2‑driven ductal scaffold + P‑driven lobuloalveolar units), **folded‑in progesterone PK** (micronized P's ~3× peak/mean swing; LA integrates exposure), **P‑withdrawal lactogenesis gate**, **E2 taper vs hard drop**, and the **estrogen brake** on maintained HRT. End‑to‑end bands (drug *and* gland uncertainty); equieffective `compare`; low‑dose `sweep`; `risk` exposure framing; **`personalize`** — importance‑sampling inference from a participant's own prolactin/supply measurements, with a posterior‑predictive titration table. **No controlled trials in trans women** — calibrated from postpartum cis literature, large uncertainty flagged. |
 
 The model is deliberately **simplified and transparent**: every parameter is a named,
 citable constant (see [`docs/references.md`](docs/references.md)), and the few that are
@@ -86,6 +86,15 @@ hormone-sim lactation --prep-weeks 30 --p-start-weeks 30   # P-free
 
 # Head-to-head: agents dose-matched to the SAME prolactin target
 hormone-sim compare --agents domperidone metoclopramide --target-prolactin 130
+
+# Risk-exposure framing for a planned course (duration/age/cumulative tiers)
+hormone-sim risk --agent metoclopramide --dose 15 --weeks 12 --age 30
+
+# Personal inference from a participant's measurements (study layer):
+# week 2 post-drop on 10 mg/d, PRL 72, pumping yield 95 mL/day, etc.
+hormone-sim personalize --agent metoclopramide --dose 10 \
+    --obs '2:prl=72,milk=95' --obs '6:prl=78,milk=140' \
+    --candidate-doses 10 15 20
 ```
 
 Programmatic use:

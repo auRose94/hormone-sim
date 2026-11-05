@@ -52,6 +52,10 @@ class SensitivitySpec:
     low-dose regime shows a fake sharp cliff (everyone matures above exactly
     40 ng/mL, nobody below); with it, low doses show what is actually claimed:
     a heterogeneous zone where some modeled bodies respond and others don't.
+
+    ``galactagogue_cvs`` sample the DRUG side of the chain — each modeled
+    body gets its own prolactin Emax/ED50 and baseline — so the bands are
+    END-TO-END: drug response *and* gland response, not gland-only.
     """
 
     cvs: Dict[str, float] = field(default_factory=lambda: {
@@ -62,6 +66,12 @@ class SensitivitySpec:
         "ductal_tau_weeks": 0.35,
         "la_tau_weeks": 0.35,
         "involution_rate_per_week": 0.50,
+    })
+
+    galactagogue_cvs: Dict[str, float] = field(default_factory=lambda: {
+        "prolactin_emax_ng_ml": 0.30,
+        "prolactin_ed50_mg_day": 0.30,
+        "baseline": 0.20,
     })
 
     def sample(self, rng: np.random.Generator) -> LactationModel:
@@ -169,17 +179,41 @@ def simulate_lactation_population(
     spec: Optional[SensitivitySpec] = None,
     total_weeks: Optional[float] = None,
     dt_weeks: float = 0.25,
+    include_drug_uncertainty: bool = True,
 ) -> LactationPopulationResult:
-    """Monte-Carlo the lactation model's uncertain milk parameters."""
+    """Monte-Carlo the lactation model's uncertain parameters.
+
+    By default the sampled parameters include the DRUG side (each modeled
+    body's prolactin Emax/ED50 and baseline, per ``spec.galactagogue_cvs``),
+    making the envelope end-to-end: drug response *and* gland response.
+    Pass ``include_drug_uncertainty=False`` to hold the agent's dose-response
+    at its population value (gland-only bands, the pre-0.5 behavior).
+    """
+    from .galactagogues import get_galactagogue, PROLACTIN_BASELINE_NG_ML
+
     spec = spec or SensitivitySpec()
     rng = np.random.default_rng(seed)
+    g = get_galactagogue(protocol.galactagogue)
 
     stack: List[np.ndarray] = []
     weeks = None
     for _ in range(n):
         m = spec.sample(rng)
+
+        p_drug = None
+        if include_drug_uncertainty:
+            emax = g.prolactin_emax_ng_ml * float(
+                rng.lognormal(0.0, spec.galactagogue_cvs["prolactin_emax_ng_ml"]))
+            ed50 = max(1e-3, g.prolactin_ed50_mg_day * float(
+                rng.lognormal(0.0, spec.galactagogue_cvs["prolactin_ed50_mg_day"])))
+            base = PROLACTIN_BASELINE_NG_ML * float(
+                rng.lognormal(0.0, spec.galactagogue_cvs["baseline"]))
+            d = max(0.0, float(protocol.galactagogue_dose_mg_day))
+            p_drug = base + emax * d / (ed50 + d)
+
         res = simulate_lactation(protocol, total_weeks=total_weeks,
-                                 dt_weeks=dt_weeks, model=m)
+                                 dt_weeks=dt_weeks, model=m,
+                                 individual_prolactin_ng_ml=p_drug)
         if weeks is None:
             weeks = res.weeks
         stack.append(res.milk_ml_day)

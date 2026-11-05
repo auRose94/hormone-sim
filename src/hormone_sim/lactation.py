@@ -63,6 +63,7 @@ from .galactagogues import (
     prolactin_response,
     PROLACTIN_BASELINE_NG_ML,
 )
+from .progestogens import get_progestogen
 
 
 @dataclass(frozen=True)
@@ -97,6 +98,25 @@ class LactationModel:
     # Estradiol effect on ductal growth is saturating with this EC50 (pg/mL).
     # 150 pg/mL (typical trans-feminine level) -> ~60% of maximal drive.
     ductal_e2_ec50_pgml: float = 100.0
+
+    # Progesterone drive on lobuloalveolar growth: saturating in the
+    # time-averaged P level (ng/mL) with this Km. Calibrated with large
+    # uncertainty (see progestogens.py for why the mean level, not the peaks).
+    la_p_km_ng_ml: float = 3.0
+
+    # Lactogenesis II is triggered by progesterone WITHDRAWAL: maturation
+    # progresses only when P has fallen below this fraction of its prep-phase
+    # mean. This is why "the drop" matters — and why continuing P suppresses
+    # supply even with a galactagogue on board.
+    p_withdrawal_frac: float = 0.20
+
+    # Estrogen BRAKE on established milk output. High-dose estrogen suppresses
+    # lactation (historically used to do exactly that postpartum), so a
+    # patient who keeps her HRT dose through the lactation phase pays a
+    # supply cost. Brake fraction at saturating E2, and its EC50 (pg/mL).
+    # Calibrated guess — flag accordingly.
+    e2_brake_max: float = 0.60
+    e2_brake_ec50_pgml: float = 200.0
 
     # Lactogenesis maturation: the gland takes time to respond to elevated
     # prolactin ("milk coming in"). tau_maturation sets that ramp (weeks).
@@ -146,6 +166,23 @@ class LactationModel:
         return min(1.0, max(0.0, float(sessions_per_day)) /
                    self.protection_sessions_per_day)
 
+    def p_drive(self, p_level_ng_ml: float) -> float:
+        """Saturating progesterone drive on LA development from the mean P
+        level (ng/mL). The gland integrates exposure; see progestogens.py."""
+        p = max(0.0, float(p_level_ng_ml))
+        return p / (self.la_p_km_ng_ml + p)
+
+    def p_withdrawn(self, p_level_ng_ml: float, prep_mean_ng_ml: float) -> bool:
+        """Whether P has fallen far enough to permit lactogenesis II."""
+        threshold = self.p_withdrawal_frac * max(prep_mean_ng_ml, 1e-9)
+        return p_level_ng_ml <= threshold
+
+    def e2_brake(self, e2_pgml: float) -> float:
+        """Fraction (0-1) of milk output remaining given a maintained E2
+        level during lactation (1.0 = no brake, at e2 = 0)."""
+        e2 = max(0.0, float(e2_pgml))
+        return 1.0 - self.e2_brake_max * (e2 / (self.e2_brake_ec50_pgml + e2))
+
 
 @dataclass(frozen=True)
 class LactationProtocol:
@@ -161,6 +198,20 @@ class LactationProtocol:
 
     prep_weeks: float = 30.0            # E2 + anti-androgen phase
     progesterone_start_weeks: Optional[float] = None  # None -> prep-12
+    # Progesterone agent + dose: the P level now feeds a saturating LA drive
+    # (PK-folded; see progestogens.py), so P dose-response is real in-model.
+    progestogen: str = "micronized_progesterone"
+    progesterone_dose_mg_day: float = 200.0
+    # Transition shape. taper_weeks = 0 -> hard drop at prep_weeks (the
+    # classic protocol). taper_weeks > 0 -> E2 (and P, if still on) decline
+    # linearly to their post-drop levels over that many weeks AFTER the
+    # drop; the galactagogue and pumping still start at prep_weeks. Tapering
+    # delays the P-withdrawal trigger and thus "milk coming in".
+    taper_weeks: float = 0.0
+    # Estradiol level MAINTAINED during the lactation phase (pg/mL). 0 = full
+    # drop (maximal supply, no tissue support). Keeping HRT-level E2 here
+    # buys tissue support at a supply cost (the estrogen brake on lactation).
+    post_drop_e2_pgml: float = 0.0
     galactagogue: str = "domperidone"
     galactagogue_dose_mg_day: float = 40.0
     pumping_sessions_per_day: float = 8.0
@@ -175,11 +226,18 @@ class LactationProtocol:
     def summary(self) -> str:
         p_on = self.p_start()
         p_txt = f"{p_on:g}-{self.prep_weeks:g} wk" if p_on < self.prep_weeks else "none"
+        taper_txt = (f"{self.taper_weeks:g} wk taper"
+                     if self.taper_weeks > 0 else "hard drop")
+        e2_txt = (f"{self.post_drop_e2_pgml:g} pg/mL maintained"
+                  if self.post_drop_e2_pgml > 0 else "full drop")
         return (
             f"Protocol: Newman-Goldfarb-style induction\n"
             f"  Prep: {self.prep_weeks:g} wk on E2 ({self.prep_e2_pgml:g} pg/mL) "
             f"+ anti-androgen\n"
-            f"  Progesterone: {p_txt}\n"
+            f"  Progesterone: {p_txt} "
+            f"({self.progesterone_dose_mg_day:g} mg/d "
+            f"{self.progestogen.replace('_', ' ')})\n"
+            f"  Transition: {taper_txt}; post-drop E2: {e2_txt}\n"
             f"  Galactagogue: {self.galactagogue} "
             f"{self.galactagogue_dose_mg_day:g} mg/day\n"
             f"  Pumping: {self.pumping_sessions_per_day:g} sessions/day"
@@ -197,6 +255,8 @@ class LactationResult:
     priming: np.ndarray           # combined capacity index = sqrt(ductal*LA)
     maturation: np.ndarray        # 0-1 lactogenesis maturation (milk coming in)
     prolactin: np.ndarray         # ng/mL (weekly average)
+    p_level_ng_ml: np.ndarray     # mean progesterone level (ng/mL)
+    e2_level_pgml: np.ndarray     # estradiol level (pg/mL)
     milk_ml_day: np.ndarray       # mL/day
     phase: np.ndarray             # 0=prep, 1=lactation
 
@@ -252,15 +312,25 @@ def simulate_lactation(
     total_weeks: Optional[float] = None,
     dt_weeks: float = 0.25,
     model: Optional[LactationModel] = None,
+    individual_prolactin_ng_ml: Optional[float] = None,
 ) -> LactationResult:
     """Simulate the full protocol timeline.
 
-    Prep: ductal grows with E2; lobuloalveolar grows with progesterone,
-    gated by the ductal scaffold. Lactation: galactagogue raises prolactin,
-    maturation ramps, pumping maintains (never rebuilds) glandular structure.
+    Prep: ductal grows with E2; lobuloalveolar grows with the *mean*
+    progesterone level (PK-folded via progestogens.py), gated by the ductal
+    scaffold. Transition: hard drop by default, or a linear taper of E2 (and
+    P) over ``taper_weeks``. Lactation: galactagogue raises prolactin, but
+    maturation (lactogenesis II) waits for progesterone WITHDRAWAL; pumping
+    maintains (never rebuilds) glandular structure; any E2 maintained through
+    this phase applies the estrogen brake to output.
+
+    ``individual_prolactin_ng_ml`` overrides the agent's population dose-
+    response (used by the personalization/sensitivity layers to inject a
+    sampled individual's prolactin level).
     """
     model = model or LactationModel()
     g = get_galactagogue(protocol.galactagogue)
+    prog = get_progestogen(protocol.progestogen)
 
     if total_weeks is None:
         # Prep + a year of lactation phase by default.
@@ -274,37 +344,71 @@ def simulate_lactation(
     capacity = np.zeros(n)
     maturation = np.zeros(n)
     prolactin = np.zeros(n)
+    p_level = np.zeros(n)
+    e2_level = np.zeros(n)
     milk = np.zeros(n)
     phase = np.zeros(n, dtype=int)
 
     # Ductal / LA growth constants (per week, at reference drive).
     k_d = 1.0 / model.ductal_tau_weeks
     k_la = 1.0 / model.la_tau_weeks
-    e2_drive = model.e2_drive(protocol.prep_e2_pgml)
 
-    # P phase window (empty if P-free protocol).
+    # --- hormone level trajectories (mean levels on the weekly grid) --------
     p_start = protocol.p_start()
     p_end = protocol.prep_weeks
-
-    # Prolactin on the galactagogue (steady-state, dose-based) — the PK ramp
-    # is fast (days) relative to the weekly grid, so use the steady state.
-    p_drug = prolactin_response(g, protocol.galactagogue_dose_mg_day)
-
-    # Maturation grows only while prolactin exceeds the threshold.
-    p_threshold = model.maturation_prolactin_threshold_ng_ml
-    tau_m = model.maturation_tau_weeks
+    p_on_mean = prog.mean_conc_ng_ml(protocol.progesterone_dose_mg_day)
+    taper = max(0.0, float(protocol.taper_weeks))
+    taper_end = protocol.prep_weeks + taper
 
     for i, w in enumerate(weeks):
         in_lactation = w >= protocol.prep_weeks
         phase[i] = 1 if in_lactation else 0
 
+        # Progesterone: on during the P window; linear taper after the drop
+        # if tapering; zero otherwise.
+        if w < p_start or w >= p_end + taper:
+            p_level[i] = 0.0
+        elif w < p_end:
+            p_level[i] = p_on_mean
+        else:  # taper window: linear decline prep_mean -> 0
+            frac = (w - p_end) / taper if taper > 0 else 1.0
+            p_level[i] = p_on_mean * max(0.0, 1.0 - frac)
+
+        # Estradiol: prep level until the drop; linear taper to the
+        # post-drop level if tapering; maintenance level afterwards.
+        if w < protocol.prep_weeks:
+            e2_level[i] = protocol.prep_e2_pgml
+        elif w < taper_end and taper > 0:
+            frac = (w - protocol.prep_weeks) / taper
+            e2_level[i] = (protocol.prep_e2_pgml +
+                           (protocol.post_drop_e2_pgml - protocol.prep_e2_pgml) * frac)
+        else:
+            e2_level[i] = protocol.post_drop_e2_pgml
+
+    # Prolactin: population dose-response, or a sampled individual's level.
+    if individual_prolactin_ng_ml is not None:
+        p_drug = float(individual_prolactin_ng_ml)
+    else:
+        p_drug = prolactin_response(g, protocol.galactagogue_dose_mg_day)
+
+    # Maturation gates.
+    p_threshold = model.maturation_prolactin_threshold_ng_ml
+    tau_m = model.maturation_tau_weeks
+
+    for i, w in enumerate(weeks):
+        in_lactation = w >= protocol.prep_weeks
+
         if not in_lactation:
-            # Prep: ductal grows with E2; LA grows with P, gated by ducts.
+            # Prep: ductal grows with the current E2 level; LA grows with
+            # the mean P drive, gated by the ductal scaffold.
             d_prev = ductal[i - 1] if i > 0 else 0.0
             la_prev = la[i - 1] if i > 0 else 0.0
-            ductal[i] = min(1.0, d_prev + k_d * e2_drive * (1.0 - d_prev) * dt_weeks)
-            p_on = 1.0 if (p_start <= w < p_end) else 0.0
-            la[i] = min(1.0, la_prev + k_la * p_on * ductal[i] * (1.0 - la_prev) * dt_weeks)
+            ductal[i] = min(1.0, d_prev + k_d * model.e2_drive(e2_level[i])
+                            * (1.0 - d_prev) * dt_weeks)
+            p_on = 1.0 if p_level[i] > 0 else 0.0
+            drive = model.p_drive(p_level[i]) * p_on
+            la[i] = min(1.0, la_prev + k_la * drive * ductal[i]
+                        * (1.0 - la_prev) * dt_weeks)
             maturation[i] = 0.0
             prolactin[i] = PROLACTIN_BASELINE_NG_ML
             milk[i] = 0.0
@@ -319,17 +423,21 @@ def simulate_lactation(
             ductal[i] = max(0.0, d_prev - decay)
             la[i] = max(0.0, la_prev - decay)
 
-            # Prolactin rises; maturation follows with a lag when above threshold.
+            # Prolactin rises (galactagogue); maturation follows with a lag,
+            # but ONLY once progesterone has withdrawn (lactogenesis II).
             prolactin[i] = p_drug
             prev_m = maturation[i - 1] if i > 0 else 0.0
-            if prolactin[i] > p_threshold:
+            gates_open = (prolactin[i] > p_threshold and
+                          model.p_withdrawn(p_level[i], p_on_mean))
+            if gates_open:
                 maturation[i] = min(1.0, prev_m + (1.0 - prev_m) * dt_weeks / tau_m)
             else:
                 maturation[i] = prev_m
 
             f_p = model.f_prolactin(prolactin[i])
             f_s = model.f_suckling(protocol.pumping_sessions_per_day)
-            milk[i] = model.milk_vmax_ml_day * f_p * f_s * maturation[i]
+            brake = model.e2_brake(e2_level[i])
+            milk[i] = (model.milk_vmax_ml_day * f_p * f_s * brake * maturation[i])
 
         capacity[i] = float(np.sqrt(max(0.0, ductal[i] * la[i])))
 
@@ -343,6 +451,8 @@ def simulate_lactation(
         priming=capacity,
         maturation=maturation,
         prolactin=prolactin,
+        p_level_ng_ml=p_level,
+        e2_level_pgml=e2_level,
         milk_ml_day=milk,
         phase=phase,
     )

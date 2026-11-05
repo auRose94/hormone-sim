@@ -100,6 +100,22 @@ pregnancy priming). Treat all outputs as a mechanistic reasoning tool.
   drop → D2 antagonist + pumping 8–12 sessions/day). Trans-feminine outcomes are
   **case reports only**; partial supply (tens-to-low-hundreds of mL/day) is the
   reported norm, not full lactation.
+- **Micronized progesterone PK:** peak 1–3 h post-dose, t½ ~6 h, oral F
+  ~8–15%, Vd large (~10 L/kg) — 200 mg/day gives mean ~10 ng/mL with Cmax
+  ~25–30 ng/mL (~3× peak/mean swing, near-zero trough at bedtime dosing).
+  *StatPearls 'Progesterone'; Simon JA et al., dose-ranging PK of oral
+  micronized progesterone, 1993.* The lactation model integrates exposure
+  (LA responds to the mean level); peaks govern sedation and how abruptly
+  withdrawal lands.
+- **Lactogenesis II is triggered by progesterone WITHDRAWAL** (with
+  prolactin high): the P-removal gate in the model encodes this, and it is
+  why continuing P into the lactation phase suppresses supply.
+  *Neville MC et al., 'Lactogenesis: the transition from pregnancy to
+  lactation,' J Mammary Gland Biol Neoplasia 2001; Cowie, Forsyth & Hart 1980.*
+- **Estrogen suppresses established lactation** (high-dose estrogen was
+  historically used postpartum to suppress milk). The model's `e2_brake`
+  encodes the supply cost of maintaining HRT-level estradiol through the
+  lactation phase — calibrated as a guess, flagged accordingly.
 - **Landmark case report:** Reisman T, Goldstein Z. "Induced Lactation in a
   Transgender Woman." *N Engl J Med* 2018;378. — One patient; estradiol +
   anti-androgen priming with added progesterone, then domperidone + pumping;

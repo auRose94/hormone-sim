@@ -56,6 +56,8 @@ from .sensitivity import (
     simulate_lactation_population,
 )
 from .risk_exposure import exposure_report
+from .personalization import Observation, personalize, posterior_predictive
+from .lactation import LactationProtocol as _LP
 
 
 def _safe_slug(name: str) -> str:
@@ -439,6 +441,57 @@ def cmd_risk(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_obs(spec_str: str) -> Observation:
+    """Parse 'week:prl=X,milk=Y' (each measurement optional)."""
+    import re as _re
+    m = _re.match(r"^\s*([0-9.]+)\s*:(.*)$", spec_str.strip())
+    if not m:
+        raise ValueError(f"Bad observation {spec_str!r}; want 'week:prl=X,milk=Y'")
+    week = float(m.group(1))
+    prl = milk = None
+    for kv in m.group(2).split(","):
+        kv = kv.strip()
+        if not kv:
+            continue
+        k, _, v = kv.partition("=")
+        if k.strip().lower() == "prl":
+            prl = float(v)
+        elif k.strip().lower() == "milk":
+            milk = float(v)
+        else:
+            raise ValueError(f"Unknown key {k!r} in observation {spec_str!r}")
+    if prl is None and milk is None:
+        raise ValueError(f"Observation {spec_str!r} has no measurement")
+    return Observation(weeks_after_drop=week, dose_mg_day=0.0,
+                       prolactin_ng_ml=prl, milk_ml_day=milk)
+
+
+def cmd_personalize(args: argparse.Namespace) -> int:
+    """Personal inference from a participant's measured prolactin/supply."""
+    obs = []
+    for i, spec_str in enumerate(args.obs):
+        o = _parse_obs(spec_str)
+        # CLI carries one current dose; scale per-observation dose if a
+        # per-obs dose was given as 'week:dose=X:prl=...' — keep simple: use
+        # --dose for all observations unless an explicit dose key present.
+        o.dose_mg_day = args.dose
+        obs.append(o)
+    result = personalize(
+        agent=args.agent, observations=obs,
+        prep_weeks=args.prep_weeks, pumping_sessions_per_day=args.sessions,
+        n=args.n, seed=args.seed,
+    )
+    print(result.report())
+    print()
+    proto = _LP(galactagogue=args.agent, galactagogue_dose_mg_day=args.dose,
+                prep_weeks=args.prep_weeks,
+                pumping_sessions_per_day=args.sessions)
+    print(posterior_predictive(result, args.candidate_doses,
+                               prep_weeks=args.prep_weeks,
+                               base_protocol=proto))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="hormone-sim",
@@ -564,6 +617,24 @@ def build_parser() -> argparse.ArgumentParser:
     prk.add_argument("--antipsychotics", action="store_true",
                      help="flag concurrent dopamine-antagonist use")
     prk.set_defaults(func=cmd_risk)
+
+    ppz = sub.add_parser("personalize",
+                         help="personal inference from measured prolactin/supply")
+    ppz.add_argument("--agent", default="metoclopramide",
+                     choices=sorted(GALACTAGOGUES.keys()))
+    ppz.add_argument("--obs", action="append", required=True,
+                     help="observation 'week:prl=X,milk=Y' (weeks post-drop; "
+                     "repeatable; e.g. --obs '2:prl=72,milk=95')")
+    ppz.add_argument("--dose", type=float, default=10.0,
+                     help="galactagogue dose in effect at the observations (mg/d)")
+    ppz.add_argument("--prep-weeks", type=float, default=30.0)
+    ppz.add_argument("--sessions", type=float, default=8.0)
+    ppz.add_argument("--n", type=int, default=400, help="ensemble size")
+    ppz.add_argument("--seed", type=int, default=7)
+    ppz.add_argument("--candidate-doses", nargs="+", type=float,
+                     default=[10, 15, 20],
+                     help="doses for the posterior-predictive titration table")
+    ppz.set_defaults(func=cmd_personalize)
 
     return p
 
