@@ -134,8 +134,14 @@ These encode hard-won calibration lessons; several were *caught by tests*:
 
 ### 5b. Scientific expansions (need literature anchors first — cite or skip)
 
-1. **DHT layer** (5α-reductase): voice/hair/body drivers and the honest
-   basis for 5α-RD and PAIS packs. No anchor, no model — current stance.
+1. **DHT layer** (5α-reductase): **references pass complete**
+   (`docs/dht-layer-notes.md`, 2026-11-05). Verdict: thin layer anchorable
+   (per-route DHT:T modifier, alopecia/5α-RI notes, 5α-RD2-deficiency pack,
+   exploratory PSA line in protocol-t); voice/terminal-hair clocks stay
+   T-driven (5α-RD2-deficiency natural experiment); serum PSA dynamics in
+   trans men are an open measurement gap worth proposing. Implementation
+   deferred until the §5b.2/§5b.3 passes land (shared free-fraction/PK
+   plumbing — one coherent wave).
 2. **SHBG / free-hormone layer**: explicit free-vs-bound compartment
    (would refine REA/potency and T trough behavior).
 3. **Estrone / oral-route metabolites**: oral E2's estrone contribution and

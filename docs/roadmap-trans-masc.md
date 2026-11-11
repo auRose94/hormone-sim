@@ -40,7 +40,10 @@ directly reusable for the esters.
   on stable T."
 * **5α-DHT** (skin/hair/voice-relevant metabolite) as a second PD state if
   justifiable from data — or explicitly omitted with a note, rather than
-  hand-waved.
+  hand-waved. *(References pass 2026-11-05: `docs/dht-layer-notes.md` —
+  thin layer only; voice/terminal-hair clocks stay T-driven per the
+  5α-RD2-deficiency phenotype; route-dependent DHT:T and the
+  prostatic-metaplasia/PSA findings are the anchorable parts.)*
 
 ## 3. Masculinization PD outcomes (new `masculinization.py`, mirrors `breast_development.py`)
 
